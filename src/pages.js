@@ -20,6 +20,9 @@ const page = (title, body) => `<!doctype html>
 </body>
 </html>`
 
+// JSON inside <script>: escape "<" so no value can close the script tag.
+const scriptJson = v => JSON.stringify(v).replace(/</g, '\\u003c')
+
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
 export function installPage ({ manifest, manifestUrl, user }) {
@@ -70,8 +73,8 @@ export function configurePage ({ manifest, addonBase, defaults, scraperKeys, mod
     <p class="small">Or paste this URL into the Stremio addon search bar:</p>
     <code id="manifest"></code>
     <script>
-      const base = ${JSON.stringify(addonBase)}
-      const defaults = ${JSON.stringify(defaults)}
+      const base = ${scriptJson(addonBase)}
+      const defaults = ${scriptJson(defaults)}
       const form = document.getElementById('form')
       function update () {
         const cfg = {}

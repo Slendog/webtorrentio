@@ -18,6 +18,9 @@ const c = {
   inverse: s => `${ESC}7m${s}${ESC}27m`
 }
 
+// Names come from peers and index sites; never let them reach the terminal as control codes.
+const safe = s => String(s ?? '').replace(/[\x00-\x1f\x7f-\x9f]/g, '?')
+
 const visible = s => s.replace(/\x1b\[[0-9;]*m/g, '')
 
 // Cut or pad a line to exactly `width` visible characters, keeping color codes intact.
@@ -146,21 +149,21 @@ export async function startTui () {
     torrents.forEach((t, i) => {
       const state = t.prefetched ? c.cyan(`prefetched${t.ready ? '' : ', loading'}, ${duration(t.removesAt - Date.now())}`) : !t.ready ? c.yellow('loading') : t.connections ? c.green(`▶ ${t.connections} connection${t.connections > 1 ? 's' : ''}`) : c.dim(`idle, ${duration(t.removesAt - Date.now())}`)
       const disk = bytes(t.onDisk) + (st.disk.perStreamLimit ? c.dim('/' + bytes(st.disk.perStreamLimit)) : '')
-      lines.push(`  ${pad(i + 1, 2)} ${pad(t.name, nameW)} ${pad(t.users.join(',') || '-', 12)} ${pad(c.green(speed(t.downloadSpeed)), 11, true)} ` +
+      lines.push(`  ${pad(i + 1, 2)} ${pad(safe(t.name), nameW)} ${pad(safe(t.users.join(',')) || '-', 12)} ${pad(c.green(speed(t.downloadSpeed)), 11, true)} ` +
         `${pad(c.blue(speed(t.uploadSpeed)), 10, true)} ${pad(`${t.peers.connected}(${t.peers.seeders}s)`, 8, true)} ${pad(disk, 20, true)} ${state}`)
       if (t.watchers.list.length) {
         const w = t.watchers
         lines.push('       ' + c.cyan('Watching: ') + w.list.map(x => {
-          if (x.positionSec == null) return `${x.user} at ${(x.fraction * 100).toFixed(1)}%`
+          if (x.positionSec == null) return `${safe(x.user)} at ${(x.fraction * 100).toFixed(1)}%`
           const gap = w.list.length > 1 ? (x.behindSec > 0 ? c.red(` ${clock(x.behindSec)} behind`) : c.green(' ahead')) : ''
-          return `${x.user} ≈ ${c.bold(clock(x.positionSec))}/${clock(w.runtimeSec)}${gap}`
+          return `${safe(x.user)} ≈ ${c.bold(clock(x.positionSec))}/${clock(w.runtimeSec)}${gap}`
         }).join('   '))
       }
       for (const v of t.viewers) {
         const pct = v.target ? Math.min(1, v.bufferedAhead / v.target) : 1
         const barW = 20
         const bar = c.green('█'.repeat(Math.round(pct * barW))) + c.dim('░'.repeat(barW - Math.round(pct * barW)))
-        lines.push(c.dim(`       └ ${v.user} at ${(v.position / v.length * 100).toFixed(1)}%  `) + bar +
+        lines.push(c.dim(`       └ ${safe(v.user)} at ${(v.position / v.length * 100).toFixed(1)}%  `) + bar +
           c.dim(`  ${bytes(v.bufferedAhead)} of ${bytes(v.target)} ahead`))
       }
     })
@@ -172,7 +175,7 @@ export async function startTui () {
     if (!users.length) lines.push(c.dim('     No users. Press [a] to add one; tokens are then required.'))
     for (const u of users) {
       const url = showTokens ? `${data.publicUrl}/${u.token}/` : `${data.publicUrl}/${u.token.slice(0, 4)}${'•'.repeat(12)}/`
-      lines.push(`     ${pad(u.user, 16)} ${pad(c.dim(u.source === 'env' ? 'env' : 'runtime'), 8)} ${url}`)
+      lines.push(`     ${pad(safe(u.user), 16)} ${pad(c.dim(u.source === 'env' ? 'env' : 'runtime'), 8)} ${url}`)
     }
     lines.push('')
 
@@ -202,7 +205,10 @@ export async function startTui () {
     const logRows = Math.max(1, height - lines.length - footer.length - 1)
     lines.push(section('Log', width))
     const shown = logs.slice(-logRows + 1)
-    for (const l of shown) lines.push(l.level === 'error' ? c.red(l.text) : l.level === 'warn' ? c.yellow(l.text) : c.dim(l.text))
+    for (const l of shown) {
+      const text = safe(l.text)
+      lines.push(l.level === 'error' ? c.red(text) : l.level === 'warn' ? c.yellow(text) : c.dim(text))
+    }
     while (lines.length < height - footer.length) lines.push('')
     lines.length = height - footer.length
     lines.push(...footer)
@@ -261,7 +267,7 @@ export async function startTui () {
         return ask(`Remove torrent # (1-${torrents.length}); stops it for everyone:`, n => {
           const t = torrents[Number(n) - 1]
           if (!t) return flash(`No torrent #${n}`, 'error')
-          act(() => adminRequest('DELETE', `/torrents/${t.infoHash}`), () => flash(`Removed ${t.name}`))
+          act(() => adminRequest('DELETE', `/torrents/${t.infoHash}`), () => flash(`Removed ${safe(t.name)}`))
         })
       case 'b':
       case 'q':

@@ -88,8 +88,10 @@ because Stremio's player may not trust the local certificate.
 
 ### Other devices (TV, phone)
 
-Set `PUBLIC_URL` to an address the device can reach, for example
-`PUBLIC_URL=http://192.168.1.20:7000 npm start`, and install from that address. On a public
+The server listens only on this computer (`127.0.0.1`) unless told otherwise. Set `PUBLIC_URL`
+to an address the device can reach, for example `PUBLIC_URL=http://192.168.1.20:7000 npm start`;
+the server then listens on all interfaces (or set `HOST` yourself). Add a user first (see below),
+and install from that address. On a public
 server, use HTTPS with a domain (see [Docker](#docker-linux-server)). Each install can also
 override the stream link address with Stremio's **Configure** button.
 
@@ -218,8 +220,7 @@ cp .env.example .env
 docker compose run --rm addon node scripts/token.js    # once per user, paste into ACCESS_TOKENS
 # edit .env: PUBLIC_URL, ACCESS_TOKENS, limits
 docker compose up -d --build
-docker compose logs addon                              # shows each user's install page
-docker compose exec addon node src/index.js dashboard  # TUI inside the running container
+docker compose exec addon node src/index.js dashboard  # TUI; press t for install links
 ```
 
 Open ports 7000/tcp (addon) and 6881/tcp+udp (BitTorrent peers, DHT). Torrent data lives in the
@@ -238,6 +239,8 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `7000` | HTTP port. |
+| `HOST` | `127.0.0.1`, or `0.0.0.0` when `PUBLIC_URL` is not a loopback address; `0.0.0.0` in Docker | Interface to listen on. |
+| `ALLOWED_HOSTS` | empty | Extra host names accepted in the `Host` header (IP addresses, `localhost`, and the hosts of `PUBLIC_URL`/`STREAM_URL` always are). |
 | `HTTPS_PORT` | `7443` | HTTPS port, used only when a certificate exists. |
 | `TLS_CERT`, `TLS_KEY` | `certs/cert.pem`, `certs/key.pem` | Certificate and key for HTTPS. |
 | `PUBLIC_URL` | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL for install and stream links. |
@@ -250,6 +253,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `DOWNLOAD_PATH` | `$TMPDIR/stremio-webtorrent` | Torrent cache. |
 | `MAX_ACTIVE_TORRENTS` | `5` | Torrents on the server. |
 | `MAX_TORRENTS_PER_USER` | `2` | Torrents one user streams at once. |
+| `MAX_CONNECTIONS_PER_USER` | `20` | Open HTTP connections per user; above it `/play` answers `429`. |
 | `MAX_DISK_GB` | unlimited | Disk budget for all torrent data. |
 | `MAX_DISK_PER_STREAM_MB` | unlimited, minimum `128` | Disk budget per torrent. |
 | `READAHEAD_MB` | `256` | Download ahead of the playback position. |
@@ -300,18 +304,41 @@ Under `/<token>` when users exist.
   script or a non-interactive shell.
 - **Stream list shows old information.** Stremio caches stream lists for up to 5 minutes;
   reopen the title later or restart Stremio.
+- **"Unknown torrent. Open it from the stream list".** Without users, the server only plays
+  torrents it listed itself (see [Security](#security)). After a restart, Stremio may still show
+  an old list: reopen the title so the list is loaded again.
+- **"Host ... is not allowed".** The server was reached through a host name it does not know.
+  Add the name to `ALLOWED_HOSTS`, or use `PUBLIC_URL` with that name.
 - **Wrong episode from a season pack.** Pack detection relies on `S01E02`-style file names.
   Choose a single-episode result.
 
 ## Security
 
-- Add users before exposing the server beyond your computer. Without users it is open to anyone
-  who can reach it, and they can stream through your connection.
-- Tokens are secrets: install links and stream links contain them, and `state/state.json`
-  stores them. Do not commit `state/`, `certs/` or `.env` (they are in `.gitignore`).
-- The admin socket gives full control over the server. It is created with owner-only permissions.
-- `npm audit` reports an advisory in the `ip` package used by WebTorrent's tracker client. There
-  is no fixed WebTorrent release yet.
+- **Add users before exposing the server.** Without users, anyone who can reach it can use it
+  and stream through your connection. By default the server listens only on `127.0.0.1`; it
+  warns at startup when it listens on the network without users.
+- **Protection against web pages.** A page open in your browser can send requests to
+  `127.0.0.1`. To limit what it can do:
+  - the dashboard, `/status` and the API send no CORS headers, so other sites cannot read them;
+  - `Host` headers with unknown names are rejected (`403`), which blocks DNS rebinding;
+  - without users, `/play` only accepts torrents that this server returned in a stream list, so
+    a page cannot make your server download and seed an arbitrary torrent.
+- **Tokens are secrets.** Install links and stream links contain them, and `state/state.json`
+  stores them. Tokens are printed only to an interactive terminal, not to log files or
+  `docker logs`. The `state/` folder is owner-only (`0700`), the state file, log and admin
+  socket are `0600`. Do not commit `state/`, `certs/` or `.env` (they are in `.gitignore`).
+- **Untrusted names.** Torrent and file names come from other peers and from index sites.
+  Control characters in them are replaced before they reach a terminal (log output, TUI), and
+  HTML is escaped in the web pages.
+- **Resource limits.** Per-user limits for torrents and connections, disk budgets, and a 5 MB
+  cap on responses from index sites.
+- **The admin socket** gives full control over the server. Only its owner can open it.
+- **`npm stop`** only signals processes that are this addon, never another program on the port.
+- **Known advisory.** `npm audit` reports an advisory in the `ip` package used by WebTorrent's
+  tracker client; no fixed WebTorrent release exists yet.
+- **Reporting.** Please report vulnerabilities privately through GitHub's
+  [security advisories](https://github.com/Slendog/webtorrentio/security/advisories/new) rather
+  than in public issues.
 
 ## How it works
 

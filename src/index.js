@@ -18,8 +18,10 @@ async function startBackground () {
     return running
   }
 
-  fs.mkdirSync(stateDir, { recursive: true })
-  const out = fs.openSync(logFile, 'a')
+  fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 })
+  fs.chmodSync(stateDir, 0o700)
+  const out = fs.openSync(logFile, 'a', 0o600)
+  fs.chmodSync(logFile, 0o600)
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
     detached: true,
     stdio: ['ignore', out, out],

@@ -439,6 +439,13 @@ export function removeByHash (infoHash, user) {
   return 'removed'
 }
 
+// Open connections of one user across all torrents, plus requests still loading.
+export function userConnections (user) {
+  let n = 0
+  for (const e of entries.values()) n += (e.users.get(user) || 0) + (e.pending.get(user) || 0)
+  return n
+}
+
 // Admin removal from the TUI: stops the torrent even while people are watching it.
 export function forceRemove (infoHash) {
   if (!entries.has(infoHash)) return false

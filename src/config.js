@@ -24,6 +24,9 @@ if (weak.length) {
 }
 
 const port = Number(env.PORT) || 7000
+
+const hostOf = url => { try { return new URL(url).hostname.replace(/^\[|\]$/g, '') } catch { return null } }
+const loopback = h => h === 'localhost' || h === '::1' || /^127\./.test(h || '')
 const httpsPort = Number(env.HTTPS_PORT) || 7443
 
 const MIN_STREAM_MB = 128
@@ -37,6 +40,12 @@ export const config = {
   httpsPort,
   tls,
   accessTokens,
+  // Network interface to listen on. Loopback by default, so the server is not reachable from
+  // other machines until you choose to: HOST=0.0.0.0, or a PUBLIC_URL on another address.
+  host: env.HOST || (env.PUBLIC_URL && !loopback(hostOf(env.PUBLIC_URL)) ? '0.0.0.0' : '127.0.0.1'),
+  // Host names accepted in the Host header besides IP addresses, localhost, and the hosts of
+  // PUBLIC_URL / STREAM_URL. Rejecting other names blocks DNS rebinding from web pages.
+  allowedHosts: (env.ALLOWED_HOSTS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
   // URL Stremio uses to reach this server. Must be reachable from the Stremio client.
   // stremio:// install links always open over HTTPS, so prefer HTTPS when it is available.
   publicUrl: (env.PUBLIC_URL || (tls ? `https://127.0.0.1:${httpsPort}` : `http://127.0.0.1:${port}`)).replace(/\/$/, ''),
@@ -57,6 +66,8 @@ export const config = {
   // Hard limits. New torrents are refused (HTTP 503) instead of exceeding them.
   maxActiveTorrents: Number(env.MAX_ACTIVE_TORRENTS) || 5,
   maxTorrentsPerUser: Number(env.MAX_TORRENTS_PER_USER) || 2,
+  // Open HTTP connections one user may hold (players use 1-3 per video).
+  maxConnectionsPerUser: Number(env.MAX_CONNECTIONS_PER_USER) || 20,
   // Disk budget for torrent data, in bytes. 0 means unlimited.
   maxDiskBytes: (Number(env.MAX_DISK_GB) || 0) * 1024 ** 3,
   // Disk budget for one torrent's data, shared by everyone watching it. 0 means unlimited.

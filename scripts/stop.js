@@ -30,7 +30,14 @@ if (!pids.size) {
   process.exit(0)
 }
 
+// Only stop processes that are this addon, never something else that uses the same port.
 for (const pid of pids) {
+  let command = ''
+  try { command = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }) } catch {}
+  if (!/src\/(index|server)\.js/.test(command)) {
+    console.log(`Not stopping pid ${pid}: it is not this addon (${command.trim().slice(0, 80)})`)
+    continue
+  }
   process.kill(pid, 'SIGTERM')
   console.log(`Sent SIGTERM to ${pid}`)
 }

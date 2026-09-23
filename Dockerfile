@@ -12,6 +12,7 @@ COPY src ./src
 COPY scripts ./scripts
 
 ENV PORT=7000 \
+    HOST=0.0.0.0 \
     TORRENT_PORT=6881 \
     DOWNLOAD_PATH=/data \
     STATE_FILE=/app/state/state.json

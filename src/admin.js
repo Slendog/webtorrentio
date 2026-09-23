@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
+import path from 'node:path'
 import express from 'express'
 import { config } from './config.js'
 import { logsSince } from './logbuffer.js'
@@ -14,6 +15,10 @@ import { forceRemove, status } from './torrent.js'
 const startedAt = Date.now()
 
 export async function startAdmin ({ stop }) {
+  // Owner-only folder: the socket must never be reachable by other local users, not even in
+  // the moment between creating it and changing its permissions.
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 })
+  fs.chmodSync(path.dirname(socketPath), 0o700)
   await clearStaleSocket()
 
   const app = express()

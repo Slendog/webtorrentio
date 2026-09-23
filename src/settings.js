@@ -32,7 +32,7 @@ function save () {
   for (const { key } of LIMITS) limits[key] = config[key]
   const runtimeUsers = [...users].filter(([, u]) => u.source === 'runtime')
     .map(([user, u]) => ({ user, token: u.token, createdAt: u.createdAt }))
-  fs.mkdirSync(path.dirname(stateFile), { recursive: true })
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true, mode: 0o700 })
   // Tokens are secrets: keep the file readable by the owner only.
   fs.writeFileSync(stateFile, JSON.stringify({ users: runtimeUsers, limits }, null, 2) + '\n', { mode: 0o600 })
 }
