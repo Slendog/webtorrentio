@@ -181,10 +181,11 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   // The response's close event fires only when the connection really ends (the request's can
   // fire as soon as its empty body is read).
   res.on('close', () => aborted.abort())
+  const requested = oneLine(req.headers.range || 'whole file').slice(0, 60)
   const redirect = reason => {
     const url = new URL(req.originalUrl, 'http://placeholder')
     url.searchParams.set('w', String(waits + 1))
-    console.log(`[play] ${id} ${reason} after ${secs(Date.now())}, redirect ${waits + 1}/${config.playMaxWaits}`)
+    console.log(`[play] ${id} ${requested}: ${reason} after ${secs(Date.now())}, redirect ${waits + 1}/${config.playMaxWaits}`)
     res.redirect(307, url.pathname + url.search)
   }
 
@@ -208,6 +209,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
     return res.status(err instanceof LimitError ? err.status : 504).send(err.message)
   }
   const { entry, file } = resolved
+  const metadataAt = Date.now()
   const ext = file.name.split('.').pop().toLowerCase()
   const total = file.length
 
@@ -253,8 +255,8 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
     console.log(`[play] ${id} player gave up after ${secs(Date.now())} while the torrent was loading`)
     return
   }
-  const resolvedAt = Date.now()
-  const rangeText = oneLine(req.headers.range || 'whole file').slice(0, 60)
+  const dataAt = Date.now()
+  const rangeText = requested
 
   const stream = openStream(entry, file, start, end, req.user)
   stream.on('error', err => {
@@ -272,8 +274,8 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   res.on('close', () => {
     stream.destroy()
     const done = res.writableFinished ? 'finished' : 'closed by player'
-    console.log(`[play] ${id} ${oneLine(file.name)} ${rangeText}: metadata ${secs(resolvedAt)}, ` +
-      `first byte ${firstByteAt ? secs(firstByteAt) : 'never'}, sent ${(sent / 1024 ** 2).toFixed(1)} MB ` +
+    console.log(`[play] ${id}${waits ? ` (after ${waits} redirect${waits > 1 ? 's' : ''})` : ''} ${oneLine(file.name)} ${rangeText}: ` +
+      `metadata ${secs(metadataAt)}, waited for data ${secs(dataAt)}, first byte ${firstByteAt ? secs(firstByteAt) : 'never'}, sent ${(sent / 1024 ** 2).toFixed(1)} MB ` +
       `in ${secs(Date.now())}, ${done}`)
   })
   stream.pipe(res)
