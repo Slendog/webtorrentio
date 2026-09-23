@@ -2,7 +2,7 @@ import { TtlCache } from './cache.js'
 import { config } from './config.js'
 import { getMeta } from './meta.js'
 import { formatBytes, parseTags, TRACKERS } from './parse.js'
-import { rememberScraped } from './registry.js'
+import { rememberScraped, rememberStreamContext } from './registry.js'
 import { prefetch } from './torrent.js'
 import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
@@ -105,7 +105,7 @@ export function parseUserConfig (encoded) {
   return out
 }
 
-async function findTorrents (type, id, scraperKeys) {
+export async function findTorrents (type, id, scraperKeys) {
   const key = `${type}:${id}:${scraperKeys.join(',')}`
   const cached = cache.get(key)
   if (cached) return cached
@@ -125,7 +125,7 @@ async function findTorrents (type, id, scraperKeys) {
 
 // Stremio stream response. playBase is the URL prefix of /play links, including the
 // user's access token, so every user gets links that only work for them.
-export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl) {
+export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl, user) {
   const scraperKeys = resolveScraperKeys(userConfig.scrapers || config.scrapers)
   // Indexes are off by default. Show one entry that explains it instead of an empty list.
   if (!scraperKeys.length) {
@@ -141,6 +141,9 @@ export async function streamResponse (type, id, playBase, userConfig = {}, confi
   const mode = userConfig.mode || config.mode
   try {
     const { query, torrents } = await findTorrents(type, id, scraperKeys)
+    if (type === 'series' && user) {
+      rememberStreamContext(user, torrents, { imdbId: query.imdbId, season: query.season, episode: query.episode, scraperKeys, mode })
+    }
     // Warm up the likely picks in the background; Stremio's native engine does its own loading.
     if (mode !== 'native') {
       setImmediate(() => {

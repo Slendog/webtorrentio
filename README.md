@@ -21,6 +21,7 @@ episode and streams the result over HTTP through a built-in
 - Background server mode; the TUI can attach to and detach from a running server.
 - Fast starts: the top results are prefetched, and for all others the player waits (with
   redirects) until data is there instead of timing out.
+- Binge-watching: near the end of an episode, the next one is prepared so it starts at once.
 - Docker and docker-compose setup with optional automatic HTTPS (Caddy).
 
 ## Requirements
@@ -129,6 +130,25 @@ Hard limits; when one is reached, the server refuses a new torrent:
 
 Several users watching the same torrent share one download and count once toward
 `MAX_ACTIVE_TORRENTS`.
+
+### Next episode
+
+While an episode plays past `NEXT_EPISODE_AT` (90%) of its file, the server prepares the next
+one, so Stremio's binge-watching starts it at once:
+
+1. It finds the next episode in Cinemeta's episode list (after a season finale, the next
+   season's first episode; nothing after the last episode).
+2. It runs that episode's search with the same indexes, so the stream list Stremio asks for
+   next is already cached.
+3. It prefetches the torrent Stremio will pick: the first result with the same quality (the
+   same `bingeGroup`). If that is the season pack being watched, it only warms up the next
+   episode's file.
+
+The prefetch is kept for `NEXT_EPISODE_TTL_MS` (30 minutes), does not count against
+`PREFETCH_MAX`, works even with `PREFETCH_COUNT=0`, and is labelled *next episode* in the
+dashboards. It is logged as, for example,
+`[next] alice: prefetching S02E01 (1080p, 6eff9eb3) at 94% of S01E08`. `NEXT_EPISODE_AT=0`
+turns it off. Not done in `native` mode.
 
 ## Disk cache
 
@@ -278,6 +298,8 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PREFETCH_HEAD_MB`, `PREFETCH_TAIL_MB` | `8`, `4` | Start and end of the file prefetched. |
 | `PREFETCH_TTL_MS` | `120000` | Unused prefetched torrents are removed after this. |
 | `PREFETCH_MAX` | `6` | Most prefetched torrents kept at once. |
+| `NEXT_EPISODE_AT` | `0.9` | Share of an episode after which the next episode is prefetched; `0` turns it off. |
+| `NEXT_EPISODE_TTL_MS` | `1800000` | How long a next-episode prefetch is kept if unused. |
 | `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
 | `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
 | `MAX_CONNS` | `55` | Peer connections per torrent. |

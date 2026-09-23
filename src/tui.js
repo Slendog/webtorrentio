@@ -147,7 +147,7 @@ export async function startTui () {
     lines.push(c.dim(`  #  ${pad('NAME', nameW)} ${pad('USERS', 12)} ${pad('DOWN', 11, true)} ${pad('UP', 10, true)} ${pad('PEERS', 8, true)} ${pad('ON DISK', 20, true)} ${pad('STATE', 18)}`))
     if (!torrents.length) lines.push(c.dim('     No active torrents. Start a stream in Stremio.'))
     torrents.forEach((t, i) => {
-      const state = t.prefetched ? c.cyan(`prefetched${t.ready ? '' : ', loading'}, ${duration(t.removesAt - Date.now())}`) : !t.ready ? c.yellow('loading') : t.connections ? c.green(`▶ ${t.connections} connection${t.connections > 1 ? 's' : ''}`) : c.dim(`idle, ${duration(t.removesAt - Date.now())}`)
+      const state = t.prefetched ? c.cyan(`${t.nextEpisode ? 'next episode' : 'prefetched'}${t.ready ? '' : ', loading'}, ${duration(t.removesAt - Date.now())}`) : !t.ready ? c.yellow('loading') : t.connections ? c.green(`▶ ${t.connections} connection${t.connections > 1 ? 's' : ''}`) : c.dim(`idle, ${duration(t.removesAt - Date.now())}`)
       const disk = bytes(t.onDisk) + (st.disk.perStreamLimit ? c.dim('/' + bytes(st.disk.perStreamLimit)) : '')
       lines.push(`  ${pad(i + 1, 2)} ${pad(safe(t.name), nameW)} ${pad(safe(t.users.join(',')) || '-', 12)} ${pad(c.green(speed(t.downloadSpeed)), 11, true)} ` +
         `${pad(c.blue(speed(t.uploadSpeed)), 10, true)} ${pad(`${t.peers.connected}(${t.peers.seeders}s)`, 8, true)} ${pad(disk, 20, true)} ${state}`)

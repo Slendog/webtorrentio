@@ -8,6 +8,7 @@ import { config } from './config.js'
 import { dashboardHtml } from './dashboard.js'
 import { configurePage, installPage, lockedPage } from './pages.js'
 import { startAdmin } from './admin.js'
+import { startNextEpisodePrefetch } from './next-episode.js'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import net from 'node:net'
@@ -107,7 +108,7 @@ configurable.get('/stream/:type/:id.json', async (req, res) => {
     return res.status(429).json({ streams: [] })
   }
   const playBase = (req.userConfig.url || config.streamUrl) + userBase(req)
-  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`))
+  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`, req.user))
 })
 
 // ---- All routes of one user
@@ -258,7 +259,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   const dataAt = Date.now()
   const rangeText = requested
 
-  const stream = openStream(entry, file, start, end, req.user)
+  const stream = openStream(entry, file, start, end, req.user, { season, episode })
   stream.on('error', err => {
     console.warn(`[http] stream error ${infoHash}: ${err.message}`)
     res.destroy(err)
@@ -365,4 +366,5 @@ process.on('unhandledRejection', reason => {
 console.log(`Server starting (pid ${process.pid})`)
 for (const line of startupSummary()) console.log(line)
 await startAdmin({ stop })
+startNextEpisodePrefetch()
 console.log('Dashboard: npm start dashboard')

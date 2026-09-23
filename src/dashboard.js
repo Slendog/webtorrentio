@@ -113,7 +113,7 @@ export const dashboardHtml = `<!doctype html>
     const viewers = t.users.map(u => u === me ? 'you' : esc(u)).join(', ')
     const pct = (t.progress * 100).toFixed(1)
     const badges = [
-      t.prefetched ? '<span class="badge">prefetched, dropped in ' + duration(t.removesAt - Date.now()) + ' if unused</span>' : t.connections > 0 ? '<span class="badge live">&#9654; ' + t.connections + (t.connections > 1 ? ' connections' : ' connection') + '</span>' : '<span class="badge">idle, removed in ' + duration(t.removesAt - Date.now()) + '</span>',
+      t.prefetched ? '<span class="badge">' + (t.nextEpisode ? 'next episode' : 'prefetched') + ', dropped in ' + duration(t.removesAt - Date.now()) + ' if unused</span>' : t.connections > 0 ? '<span class="badge live">&#9654; ' + t.connections + (t.connections > 1 ? ' connections' : ' connection') + '</span>' : '<span class="badge">idle, removed in ' + duration(t.removesAt - Date.now()) + '</span>',
       t.ready ? '' : '<span class="badge">fetching metadata&hellip;</span>',
       viewers ? '<span class="badge">&#128100; ' + viewers + '</span>' : '',
       s?.quality ? '<span class="badge">' + esc(s.quality) + '</span>' : '',

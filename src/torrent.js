@@ -84,7 +84,7 @@ const usedBy = (entry, user) => entry.users.has(user) || entry.pending.has(user)
 function scheduleIdle (entry) {
   clearTimeout(entry.idleTimer)
   if (!isIdle(entry)) return
-  const timeout = entry.prefetch ? config.prefetchTtlMs : config.idleTimeoutMs
+  const timeout = entry.prefetch ? (entry.prefetchTtlMs || config.prefetchTtlMs) : config.idleTimeoutMs
   const wait = Math.max(0, entry.lastUsed + timeout - Date.now())
   entry.idleTimer = setTimeout(() => removeTorrent(entry.infoHash), wait)
 }
@@ -299,6 +299,7 @@ export async function resolveFile (infoHash, fileIdx, season, episode, user) {
   const entry = getTorrent(infoHash)
   if (entry.prefetch) console.log(`[prefetch] ${infoHash.slice(0, 8)} used by ${user}${entry.torrent.ready ? ' (metadata was ready)' : ''}`)
   entry.prefetch = false
+  entry.nextEpisode = false
   clearTimeout(entry.idleTimer)
   bump(entry.pending, user, 1)
   try {
@@ -399,8 +400,8 @@ class SliceStream extends Readable {
   }
 }
 
-export function openStream (entry, file, start, end, user) {
-  const reader = { file, user, pos: start, sliceEnd: start, bytesRead: 0, openedAt: Date.now() }
+export function openStream (entry, file, start, end, user, { season, episode } = {}) {
+  const reader = { file, user, season, episode, pos: start, sliceEnd: start, bytesRead: 0, openedAt: Date.now() }
   entry.readers.add(reader)
   const stream = new SliceStream(entry, reader, start, end)
 
@@ -424,33 +425,65 @@ export function openStream (entry, file, start, end, user) {
 // megabytes of the file that would play (players read the header, and for MKV/MP4 often the
 // index at the end, before anything else). Players give up when these take too long, which
 // happens on networks with few peers. Unused prefetched torrents expire after PREFETCH_TTL_MS.
-export function prefetch (infoHash, { season, episode } = {}) {
-  infoHash = infoHash.toLowerCase()
-  if (!config.prefetchCount || entries.has(infoHash)) return
-  if (config.maxDiskBytes && diskUsage() >= config.maxDiskBytes * BUDGET_SHARE) return
-
-  // Keep at most PREFETCH_MAX prefetched torrents; the oldest unused one makes room.
-  const prefetched = [...entries.values()].filter(e => e.prefetch).sort((a, b) => a.addedAt - b.addedAt)
-  while (prefetched.length >= config.prefetchMax) removeTorrent(prefetched.shift().infoHash)
-
-  const entry = getTorrent(infoHash)
-  entry.prefetch = true
-  scheduleIdle(entry)
+// Download the first and last megabytes of the file that would play for season/episode, so a
+// player's first requests (header, and often the index at the end) are answered at once.
+function warmFile (entry, season, episode) {
   entry.ready.then(torrent => {
-    if (!entry.prefetch || torrent.destroyed) return
-    const idx = pickFile(torrent.files, season, episode)
-    const file = torrent.files[idx]
+    if (torrent.destroyed || !entries.has(entry.infoHash)) return
+    const file = torrent.files[pickFile(torrent.files, season, episode)]
     if (!file) return
     const pl = torrent.pieceLength
     const head = Math.min(config.prefetchHeadBytes, file.length)
     const tail = Math.min(config.prefetchTailBytes, file.length)
-    entry.warmup = [
+    entry.warmup.push(...[
       head && { from: Math.floor(file.offset / pl), to: Math.floor((file.offset + head - 1) / pl) },
       tail && { from: Math.floor((file.offset + file.length - tail) / pl), to: Math.floor((file.offset + file.length - 1) / pl) }
-    ].filter(Boolean)
+    ].filter(Boolean))
     updateReadahead(entry)
-    console.log(`[prefetch] ${infoHash.slice(0, 8)} ready, warming up ${oneLine(file.name)}`)
+    console.log(`[prefetch] ${entry.infoHash.slice(0, 8)} ready, warming up ${oneLine(file.name)}`)
   }, () => {})
+}
+
+// Load a torrent that is likely to be played next: metadata first, then the first and last
+// megabytes of the file that would play (players read the header, and for MKV/MP4 often the
+// index at the end, before anything else). Players give up when these take too long, which
+// happens on networks with few peers. Unused prefetched torrents expire after PREFETCH_TTL_MS,
+// or `ttlMs`. `nextEpisode` marks a prefetch for the next episode of a show being watched: it
+// runs even with list prefetch off, is not pushed out by PREFETCH_MAX, and when the torrent is
+// already running (a season pack) it only warms up the episode's file.
+export function prefetch (infoHash, { season, episode, ttlMs, nextEpisode = false } = {}) {
+  infoHash = infoHash.toLowerCase()
+  if (!config.prefetchCount && !nextEpisode) return
+  const running = entries.get(infoHash)
+  if (running) {
+    if (nextEpisode) warmFile(running, season, episode)
+    return
+  }
+  if (config.maxDiskBytes && diskUsage() >= config.maxDiskBytes * BUDGET_SHARE) return
+
+  // Keep at most PREFETCH_MAX list prefetches; the oldest unused one makes room.
+  const prefetched = [...entries.values()].filter(e => e.prefetch && !e.nextEpisode).sort((a, b) => a.addedAt - b.addedAt)
+  while (!nextEpisode && prefetched.length >= config.prefetchMax) removeTorrent(prefetched.shift().infoHash)
+
+  const entry = getTorrent(infoHash)
+  entry.prefetch = true
+  entry.nextEpisode = nextEpisode
+  entry.prefetchTtlMs = ttlMs
+  scheduleIdle(entry)
+  warmFile(entry, season, episode)
+}
+
+// Connections that are watching an episode: long enough reads (not a player's probe) of a
+// series file, with how far they are into it.
+export function episodeViewers () {
+  const list = []
+  for (const entry of entries.values()) {
+    for (const r of entry.readers) {
+      if (r.season == null || r.episode == null || r.bytesRead < WATCHING_MIN_BYTES) continue
+      list.push({ user: r.user, infoHash: entry.infoHash, season: r.season, episode: r.episode, fraction: r.pos / r.file.length })
+    }
+  }
+  return list
 }
 
 // Returns "removed", "missing", or "busy" (someone else is streaming it).
@@ -583,7 +616,8 @@ function torrentStats (entry) {
     scraped: getScraped(infoHash) || null,
     addedAt,
     lastUsed,
-    removesAt: connections === 0 ? lastUsed + (entry.prefetch ? config.prefetchTtlMs : config.idleTimeoutMs) : null
+    removesAt: connections === 0 ? lastUsed + (entry.prefetch ? (entry.prefetchTtlMs || config.prefetchTtlMs) : config.idleTimeoutMs) : null,
+    nextEpisode: Boolean(entry.nextEpisode)
   }
 }
 

@@ -88,6 +88,11 @@ export const config = {
   // 0 turns it off. Prefetched torrents are dropped after PREFETCH_TTL_MS if unused.
   prefetchCount: env.PREFETCH_COUNT !== undefined ? Number(env.PREFETCH_COUNT) : 2,
   prefetchMax: Number(env.PREFETCH_MAX) || 6,
+  // While an episode plays past this fraction of its file, prefetch the next episode (the
+  // torrent Stremio's binge-watching will pick). 0 turns it off. The prefetch is kept for
+  // NEXT_EPISODE_TTL_MS so it survives until the current episode ends.
+  nextEpisodeAt: env.NEXT_EPISODE_AT !== undefined ? Number(env.NEXT_EPISODE_AT) : 0.9,
+  nextEpisodeTtlMs: Number(env.NEXT_EPISODE_TTL_MS) || 30 * 60 * 1000,
   prefetchTtlMs: Number(env.PREFETCH_TTL_MS) || 2 * 60 * 1000,
   prefetchHeadBytes: (env.PREFETCH_HEAD_MB !== undefined ? Number(env.PREFETCH_HEAD_MB) : 8) * 1024 ** 2,
   prefetchTailBytes: (env.PREFETCH_TAIL_MB !== undefined ? Number(env.PREFETCH_TAIL_MB) : 4) * 1024 ** 2,
