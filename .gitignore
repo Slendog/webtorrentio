@@ -1,0 +1,8 @@
+node_modules/
+.remember/
+*.log
+certs/
+.env
+state/
+.claude/settings.local.json
+.DS_Store

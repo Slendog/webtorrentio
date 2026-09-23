@@ -1,0 +1,36 @@
+services:
+  addon:
+    build: .
+    image: stremio-webtorrent-addon:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "7000:7000"
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+    volumes:
+      - torrent-data:/data
+      # Users and limits changed in the TUI dashboard.
+      - addon-state:/app/state
+
+  # Optional HTTPS in front of the addon, with an automatic Let's Encrypt certificate.
+  # Needs a domain pointing at this server and ports 80/443 open.
+  # Start with: docker compose --profile https up -d
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - addon
+
+volumes:
+  torrent-data:
+  addon-state:
+  caddy-data:

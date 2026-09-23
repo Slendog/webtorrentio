@@ -1,0 +1,27 @@
+{
+  "name": "stremio-webtorrent-addon",
+  "version": "1.0.0",
+  "description": "Stremio addon that scrapes torrent sites and streams via WebTorrent",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "certs": "mkdir -p certs && mkcert -cert-file certs/cert.pem -key-file certs/key.pem 127.0.0.1 localhost ::1",
+    "stop": "node scripts/stop.js",
+    "token": "node scripts/token.js",
+    "dashboard": "node src/index.js dashboard",
+    "background": "node src/index.js background"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1",
+    "webtorrent": "^3.0.21"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
