@@ -8,6 +8,10 @@ let seq = 0
 
 // Torrent and file names come from other peers and from index sites. Escape sequences in them
 // would be executed by the terminal that shows the log, so control characters are replaced.
+// For values inside one log line (names, request headers): no line breaks, so they cannot
+// start a fake log line.
+export const oneLine = s => String(s).replace(/[\r\n\u2028\u2029]+/g, ' ')
+
 export const safeText = s => String(s).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '?')
 
 for (const level of ['log', 'info', 'warn', 'error']) {

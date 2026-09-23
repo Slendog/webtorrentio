@@ -5,6 +5,7 @@ import WebTorrent from 'webtorrent'
 import { config } from './config.js'
 import { magnetUri, pickFile } from './parse.js'
 import { PieceStore } from './piece-store.js'
+import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
 import { onChange } from './settings.js'
 
@@ -426,7 +427,7 @@ export function prefetch (infoHash, { season, episode } = {}) {
       tail && { from: Math.floor((file.offset + file.length - tail) / pl), to: Math.floor((file.offset + file.length - 1) / pl) }
     ].filter(Boolean)
     updateReadahead(entry)
-    console.log(`[prefetch] ${infoHash.slice(0, 8)} ready, warming up ${file.name}`)
+    console.log(`[prefetch] ${infoHash.slice(0, 8)} ready, warming up ${oneLine(file.name)}`)
   }, () => {})
 }
 

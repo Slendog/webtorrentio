@@ -1,5 +1,5 @@
 // Must be the first import: it starts collecting log lines for the dashboard.
-import './logbuffer.js'
+import { oneLine } from './logbuffer.js'
 import fs from 'node:fs'
 import https from 'node:https'
 import express from 'express'
@@ -46,7 +46,37 @@ app.use((req, res, next) => {
   next()
 })
 
+// Browser hardening for every response. HTML pages also get a Content-Security-Policy (only
+// this server's own scripts and data, no framing), and pages or data that can contain tokens
+// must not be cached by browsers or proxies.
+const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+  "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  res.setHeader('X-Frame-Options', 'DENY')
+  if (!stremioRoute.test(req.path)) res.setHeader('Cache-Control', 'no-store')
+  const type = res.type.bind(res)
+  res.type = t => {
+    if (t === 'html') res.setHeader('Content-Security-Policy', CSP)
+    return type(t)
+  }
+  next()
+})
+
 app.get('/health', (req, res) => res.json({ ok: true }))
+
+// Fixed one-minute window per user for stream list requests.
+const streamRequests = new Map()
+function streamRateExceeded (user) {
+  const now = Date.now()
+  const w = streamRequests.get(user)
+  if (!w || now - w.start >= 60_000) {
+    streamRequests.set(user, { start: now, count: 1 })
+    return false
+  }
+  return ++w.count > config.streamRatePerMin
+}
 
 // IMDb ids from Stremio: "tt1234567" for movies, "tt1234567:1:2" for episodes.
 const VALID_ID = /^tt\d{1,10}(:\d{1,4}:\d{1,5})?$/
@@ -72,6 +102,10 @@ configurable.get('/configure', (req, res) => res.type('html').send(configurePage
 configurable.get('/stream/:type/:id.json', async (req, res) => {
   const { type, id } = req.params
   if (!manifest.types.includes(type) || !VALID_ID.test(id)) return res.json({ streams: [] })
+  if (streamRateExceeded(req.user)) {
+    console.warn(`[stream] ${req.user} over ${config.streamRatePerMin} stream lists per minute, request ignored`)
+    return res.status(429).json({ streams: [] })
+  }
   const playBase = (req.userConfig.url || config.streamUrl) + userBase(req)
   res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`))
 })
@@ -142,7 +176,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   try {
     resolved = await resolveFile(infoHash, fileIdx, season, episode, req.user)
   } catch (err) {
-    console.warn(`[play] ${id} failed after ${secs(Date.now())}: ${err.message}`)
+    console.warn(`[play] ${id} failed after ${secs(Date.now())}: ${oneLine(err.message)}`)
     return res.status(err instanceof LimitError ? err.status : 504).send(err.message)
   }
   const { entry, file } = resolved
@@ -180,7 +214,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
     return
   }
   const resolvedAt = Date.now()
-  const rangeText = req.headers.range || 'whole file'
+  const rangeText = oneLine(req.headers.range || 'whole file').slice(0, 60)
 
   const stream = openStream(entry, file, start, end, req.user)
   stream.on('error', err => {
@@ -198,7 +232,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   res.on('close', () => {
     stream.destroy()
     const done = res.writableFinished ? 'finished' : 'closed by player'
-    console.log(`[play] ${id} ${file.name} ${rangeText}: metadata ${secs(resolvedAt)}, ` +
+    console.log(`[play] ${id} ${oneLine(file.name)} ${rangeText}: metadata ${secs(resolvedAt)}, ` +
       `first byte ${firstByteAt ? secs(firstByteAt) : 'never'}, sent ${(sent / 1024 ** 2).toFixed(1)} MB ` +
       `in ${secs(Date.now())}, ${done}`)
   })

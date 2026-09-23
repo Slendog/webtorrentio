@@ -254,6 +254,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `MAX_ACTIVE_TORRENTS` | `5` | Torrents on the server. |
 | `MAX_TORRENTS_PER_USER` | `2` | Torrents one user streams at once. |
 | `MAX_CONNECTIONS_PER_USER` | `20` | Open HTTP connections per user; above it `/play` answers `429`. |
+| `STREAM_RATE_PER_MIN` | `60` | Stream list requests per user and minute; above it `429` with an empty list. |
 | `MAX_DISK_GB` | unlimited | Disk budget for all torrent data. |
 | `MAX_DISK_PER_STREAM_MB` | unlimited, minimum `128` | Disk budget per torrent. |
 | `READAHEAD_MB` | `256` | Download ahead of the playback position. |
@@ -328,10 +329,16 @@ Under `/<token>` when users exist.
   `docker logs`. The `state/` folder is owner-only (`0700`), the state file, log and admin
   socket are `0600`. Do not commit `state/`, `certs/` or `.env` (they are in `.gitignore`).
 - **Untrusted names.** Torrent and file names come from other peers and from index sites.
-  Control characters in them are replaced before they reach a terminal (log output, TUI), and
-  HTML is escaped in the web pages.
-- **Resource limits.** Per-user limits for torrents and connections, disk budgets, and a 5 MB
-  cap on responses from index sites.
+  Control characters in them are replaced before they reach a terminal (log output, TUI), line
+  breaks cannot start fake log lines, and HTML is escaped in the web pages.
+- **Browser headers.** Every response has `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`. HTML pages add a
+  Content-Security-Policy that allows only their own inline code, connections to this server,
+  and no framing (no clickjacking of **Remove** or **Install**). Pages and data other than the
+  Stremio routes are sent with `Cache-Control: no-store`, so tokens are not cached.
+- **Resource limits.** Per-user limits for torrents, connections and stream list requests
+  (each one searches every enabled index), disk budgets, and a 5 MB cap on responses from index
+  sites.
 - **The admin socket** gives full control over the server. Only its owner can open it.
 - **`npm stop`** only signals processes that are this addon, never another program on the port.
 - **Known advisory.** `npm audit` reports an advisory in the `ip` package used by WebTorrent's

@@ -66,6 +66,8 @@ export const config = {
   // Hard limits. New torrents are refused (HTTP 503) instead of exceeding them.
   maxActiveTorrents: Number(env.MAX_ACTIVE_TORRENTS) || 5,
   maxTorrentsPerUser: Number(env.MAX_TORRENTS_PER_USER) || 2,
+  // Stream list requests per user and minute. Each one can search every enabled index.
+  streamRatePerMin: Number(env.STREAM_RATE_PER_MIN) || 60,
   // Open HTTP connections one user may hold (players use 1-3 per video).
   maxConnectionsPerUser: Number(env.MAX_CONNECTIONS_PER_USER) || 20,
   // Disk budget for torrent data, in bytes. 0 means unlimited.
