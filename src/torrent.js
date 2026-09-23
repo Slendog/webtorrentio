@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import WebTorrent from 'webtorrent'
 import { config } from './config.js'
 import { magnetUri, pickFile } from './parse.js'
+import { installPeerGuard, isGuarded } from './peer-guard.js'
 import { PieceStore } from './piece-store.js'
 import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
@@ -11,12 +12,27 @@ import { onChange } from './settings.js'
 
 const READY_TIMEOUT_MS = 60_000
 
+installPeerGuard()
+
 const client = new WebTorrent({
   maxConns: config.maxConns,
   torrentPort: config.torrentPort,
-  dhtPort: config.torrentPort
+  dhtPort: config.dhtPort
 })
-client.on('error', err => console.error('[webtorrent]', err.message || err))
+// WebTorrent destroys its client on any error it emits (for example a port that is already in
+// use). A server without a client can only fail later, so stop now with the reason.
+client.on('error', err => {
+  const hint = err.code === 'EADDRINUSE' ? ' Another program uses the port: change TORRENT_PORT / DHT_PORT, or stop the other program.' : ''
+  console.error(`[webtorrent] fatal: ${err.message || err}.${hint} Stopping.`)
+  process.exit(1)
+})
+let unguardedWarned = false
+client.on('torrent', torrent => torrent.on('wire', wire => {
+  if (!unguardedWarned && !isGuarded(wire)) {
+    unguardedWarned = true
+    console.warn('[peer] WebTorrent uses another copy of bittorrent-protocol than the guarded one; hostile peers may crash the server. Run `npm ls bittorrent-protocol`.')
+  }
+}))
 fs.mkdirSync(config.downloadPath, { recursive: true })
 cleanDownloadPath()
 

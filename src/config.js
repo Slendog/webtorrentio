@@ -93,6 +93,9 @@ export const config = {
   prefetchTailBytes: (env.PREFETCH_TAIL_MB !== undefined ? Number(env.PREFETCH_TAIL_MB) : 4) * 1024 ** 2,
   // Port for incoming BitTorrent connections. 0 picks a random port.
   torrentPort: Number(env.TORRENT_PORT) || 0,
+  // DHT uses its own UDP port. It must differ from TORRENT_PORT, where uTP (BitTorrent over
+  // UDP) already listens; the same port for both makes WebTorrent fail with EADDRINUSE.
+  dhtPort: Number(env.DHT_PORT) || (Number(env.TORRENT_PORT) ? Number(env.TORRENT_PORT) + 1 : 0),
   scraperTimeoutMs: Number(env.SCRAPER_TIMEOUT_MS) || 10000,
   cacheTtlMs: Number(env.CACHE_TTL_MS) || 30 * 60 * 1000,
   maxResults: Number(env.MAX_RESULTS) || 30,

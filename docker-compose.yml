@@ -8,6 +8,7 @@ services:
       - "7000:7000"
       - "6881:6881/tcp"
       - "6881:6881/udp"
+      - "6882:6882/udp"
     volumes:
       - torrent-data:/data
       # Users and limits changed in the TUI dashboard.

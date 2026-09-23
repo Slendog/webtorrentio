@@ -23,8 +23,8 @@ RUN mkdir -p /data /app/state && chown node:node /data /app/state
 USER node
 VOLUME /data /app/state
 
-# 7000: addon HTTP. 6881: incoming BitTorrent peers (TCP) and DHT (UDP).
-EXPOSE 7000 6881/tcp 6881/udp
+# 7000: addon HTTP. 6881: incoming BitTorrent peers (TCP and uTP over UDP). 6882: DHT (UDP).
+EXPOSE 7000 6881/tcp 6881/udp 6882/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 7000) + '/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"

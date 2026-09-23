@@ -352,6 +352,16 @@ async function stop (reason = 'unknown') {
 
 for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => stop(`${sig} received`))
 
+// Last line of defence: record why the server dies, with a timestamp, instead of a bare stack
+// trace. An unknown error leaves the process in an unknown state, so it still exits.
+process.on('uncaughtException', (err, origin) => {
+  console.error(`Crashed (${origin}): ${err?.stack || err}`)
+  process.exit(1)
+})
+process.on('unhandledRejection', reason => {
+  console.error(`Unhandled promise rejection (server keeps running): ${reason?.stack || reason}`)
+})
+
 console.log(`Server starting (pid ${process.pid})`)
 for (const line of startupSummary()) console.log(line)
 await startAdmin({ stop })

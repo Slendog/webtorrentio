@@ -236,7 +236,7 @@ docker compose up -d --build
 docker compose exec addon node src/index.js dashboard  # TUI; press t for install links
 ```
 
-Open ports 7000/tcp (addon) and 6881/tcp+udp (BitTorrent peers, DHT). Torrent data lives in the
+Open ports 7000/tcp (addon), 6881/tcp+udp (BitTorrent peers, uTP) and 6882/udp (DHT). Torrent data lives in the
 `torrent-data` volume, users and saved limits in `addon-state`.
 
 **HTTPS with a domain** (needed for one-click install from other devices and for Stremio Web):
@@ -278,7 +278,8 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PREFETCH_HEAD_MB`, `PREFETCH_TAIL_MB` | `8`, `4` | Start and end of the file prefetched. |
 | `PREFETCH_TTL_MS` | `120000` | Unused prefetched torrents are removed after this. |
 | `PREFETCH_MAX` | `6` | Most prefetched torrents kept at once. |
-| `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers and DHT. |
+| `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
+| `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
 | `MAX_CONNS` | `55` | Peer connections per torrent. |
 | `EXTRA_TRACKERS` | empty | Extra tracker announce URLs, comma-separated. |
 | `MAX_RESULTS` | `30` | Torrents returned per stream list. |
@@ -316,6 +317,8 @@ Under `/<token>` when users exist.
   [One-click install](#one-click-install-stremio-links), or paste the `http://` manifest URL.
 - **Stremio cannot connect / connection refused.** The server is not running. Check
   `state/server.log` for why it stopped.
+- **The server stopped by itself.** The end of `state/server.log` says why: `Shutting down
+  (...)` for a normal stop, `Crashed (...)` or `[webtorrent] fatal: ...` otherwise.
 - **"Port 7000 is already in use".** Another server is running: `npm stop`, or open it with
   `npm start dashboard`.
 - **"The dashboard needs an interactive terminal".** Run it in a real terminal, not from a
@@ -353,6 +356,14 @@ Under `/<token>` when users exist.
   Content-Security-Policy that allows only their own inline code, connections to this server,
   and no framing (no clickjacking of **Remove** or **Install**). Pages and data other than the
   Stremio routes are sent with `Cache-Control: no-store`, so tokens are not cached.
+- **Hostile peers.** Other BitTorrent peers are untrusted. Data that makes the protocol code
+  throw (for example an encryption handshake with an invalid key, which used to crash the
+  server) now closes only that peer's connection, logged as `[peer] closed a connection that
+  sent invalid data`. The guard wraps `bittorrent-protocol`; the server warns if WebTorrent
+  ever uses a different copy of it.
+- **Crashes are explained.** Any unexpected error is logged with a timestamp (`Crashed (...)`)
+  before the server exits, and a WebTorrent failure such as a busy port stops the server at once
+  with the reason instead of leaving it half working.
 - **Resource limits.** Per-user limits for torrents, connections and stream list requests
   (each one searches every enabled index), disk budgets, and a 5 MB cap on responses from index
   sites.
