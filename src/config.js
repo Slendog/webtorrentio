@@ -82,11 +82,11 @@ export const config = {
   maxDiskPerStreamBytes: (Number(env.MAX_DISK_PER_STREAM_MB) || 0) * 1024 ** 2,
   // How far ahead of the playback position a stream downloads.
   readaheadBytes: (Number(env.READAHEAD_MB) || 256) * 1024 ** 2,
-  // Optional: when a stream list loads, fetch metadata for this many top results in the
-  // background and download the first and last megabytes of the file that would play, so
-  // clicking one starts at once. Off by default (waiting with redirects covers slow starts).
-  // Prefetched torrents are dropped after PREFETCH_TTL_MS if unused.
-  prefetchCount: env.PREFETCH_COUNT !== undefined ? Number(env.PREFETCH_COUNT) : 0,
+  // When a stream list loads, fetch metadata for this many top results in the background and
+  // download the first and last megabytes of the file that would play, so clicking one starts
+  // at once. Works together with the redirect waiting, which covers every other result.
+  // 0 turns it off. Prefetched torrents are dropped after PREFETCH_TTL_MS if unused.
+  prefetchCount: env.PREFETCH_COUNT !== undefined ? Number(env.PREFETCH_COUNT) : 2,
   prefetchMax: Number(env.PREFETCH_MAX) || 6,
   prefetchTtlMs: Number(env.PREFETCH_TTL_MS) || 2 * 60 * 1000,
   prefetchHeadBytes: (env.PREFETCH_HEAD_MB !== undefined ? Number(env.PREFETCH_HEAD_MB) : 8) * 1024 ** 2,
