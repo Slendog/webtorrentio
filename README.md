@@ -343,3 +343,9 @@ export `{ name, types, search(query) }` from a module and register it in `src/sc
 - **Not affiliated** with Stremio, WebTorrent, or any index listed above. Names are used only to
   describe what the code connects to.
 - **No warranty.** The software is provided as is.
+
+## License
+
+Released into the public domain under [The Unlicense](LICENSE). Anyone may use, copy, modify
+and distribute the code for any purpose, without conditions. The legal notes above still apply
+to how the software is used.
