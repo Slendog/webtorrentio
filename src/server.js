@@ -12,7 +12,7 @@ import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import net from 'node:net'
 import { getScraped } from './registry.js'
-import { LimitError, openStream, removeByHash, resolveFile, shutdown, status, userConnections } from './torrent.js'
+import { LimitError, openStream, removeByHash, resolveFile, shutdown, status, userConnections, waitForData } from './torrent.js'
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mkv: 'video/x-matroska', webm: 'video/webm',
@@ -172,9 +172,37 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   const id = `${req.user} ${infoHash.slice(0, 8)} #${++playRequests}`
   const secs = t => `${((t - t0) / 1000).toFixed(1)}s`
 
+  // Waiting instead of timing out: players drop a request after ~15 s without data. While
+  // metadata or the first piece is missing, hold the request for PLAY_WAIT_MS, then redirect
+  // to the same URL (?w=n); the player follows it with a fresh timeout and the download goes on.
+  const waits = Number(req.query.w) || 0
+  const canWait = req.method === 'GET' && waits < config.playMaxWaits
+  const aborted = new AbortController()
+  // The response's close event fires only when the connection really ends (the request's can
+  // fire as soon as its empty body is read).
+  res.on('close', () => aborted.abort())
+  const redirect = reason => {
+    const url = new URL(req.originalUrl, 'http://placeholder')
+    url.searchParams.set('w', String(waits + 1))
+    console.log(`[play] ${id} ${reason} after ${secs(Date.now())}, redirect ${waits + 1}/${config.playMaxWaits}`)
+    res.redirect(307, url.pathname + url.search)
+  }
+
   let resolved
   try {
-    resolved = await resolveFile(infoHash, fileIdx, season, episode, req.user)
+    const resolving = resolveFile(infoHash, fileIdx, season, episode, req.user)
+    if (canWait) {
+      let timer
+      const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), config.playWaitMs) })
+      resolved = await Promise.race([resolving, late])
+      clearTimeout(timer)
+      if (!resolved) {
+        resolving.catch(() => {})
+        return redirect('metadata not ready')
+      }
+    } else {
+      resolved = await resolving
+    }
   } catch (err) {
     console.warn(`[play] ${id} failed after ${secs(Date.now())}: ${oneLine(err.message)}`)
     return res.status(err instanceof LimitError ? err.status : 504).send(err.message)
@@ -182,10 +210,6 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   const { entry, file } = resolved
   const ext = file.name.split('.').pop().toLowerCase()
   const total = file.length
-
-  res.setHeader('Accept-Ranges', 'bytes')
-  res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`)
 
   let start = 0
   let end = total - 1
@@ -201,6 +225,22 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
       res.setHeader('Content-Range', `bytes */${total}`)
       return res.status(416).end()
     }
+  }
+
+  if (canWait) {
+    const left = Math.max(0, config.playWaitMs - (Date.now() - t0))
+    const ready = await waitForData(entry, file, start, left, aborted.signal)
+    if (aborted.signal.aborted) {
+      console.log(`[play] ${id} player gave up after ${secs(Date.now())} while waiting for data`)
+      return
+    }
+    if (!ready) return redirect('first piece not ready')
+  }
+
+  res.setHeader('Accept-Ranges', 'bytes')
+  res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.name)}"`)
+  if (range) {
     res.status(206)
     res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`)
   }

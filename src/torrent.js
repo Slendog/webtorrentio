@@ -258,6 +258,7 @@ function getTorrent (infoHash) {
       readers: new Set(),
       prefetch: false,
       warmup: [],
+      holds: new Map(),
       idleTimer: null,
       addedAt: Date.now(),
       lastUsed: Date.now()
@@ -307,6 +308,11 @@ function updateReadahead (entry) {
   const readahead = effectiveReadahead(entry)
   torrent.deselect(0, last)
   for (const w of entry.warmup) torrent.select(w.from, Math.min(w.to, last), 0)
+  const now = Date.now()
+  for (const [key, h] of entry.holds) {
+    if (h.expires < now) entry.holds.delete(key)
+    else torrent.select(h.from, Math.min(h.to, last), 1)
+  }
   for (const r of entry.readers) {
     const fileEnd = r.file.offset + r.file.length - 1
     const from = Math.floor((r.file.offset + r.pos) / torrent.pieceLength)
@@ -438,6 +444,33 @@ export function removeByHash (infoHash, user) {
   if ([...entry.users.keys(), ...entry.pending.keys()].some(u => u !== user)) return 'busy'
   removeTorrent(infoHash)
   return 'removed'
+}
+
+// Wait until the piece holding byte `start` of `file` is downloaded, for at most `ms`.
+// Meanwhile the piece (and the next one) are fetched with top priority, and keep being
+// fetched for a minute after a timeout, so a redirected player finds them sooner.
+// Resolves true when the piece is there, false on timeout or when `signal` aborts.
+export function waitForData (entry, file, start, ms, signal) {
+  const { torrent } = entry
+  const piece = Math.floor((file.offset + start) / torrent.pieceLength)
+  if (torrent.bitfield?.get(piece)) return Promise.resolve(true)
+  const last = Math.min(piece + 1, torrent.pieces.length - 1)
+  entry.holds.set(piece, { from: piece, to: last, expires: Date.now() + 60_000 })
+  updateReadahead(entry)
+  torrent.critical(piece, last)
+  return new Promise(resolve => {
+    const done = ok => {
+      clearTimeout(timer)
+      torrent.removeListener('verified', onVerified)
+      signal?.removeEventListener('abort', onAbort)
+      resolve(ok)
+    }
+    const onVerified = i => { if (i === piece) done(true) }
+    const onAbort = () => done(false)
+    const timer = setTimeout(() => done(Boolean(torrent.bitfield?.get(piece))), ms)
+    torrent.on('verified', onVerified)
+    signal?.addEventListener('abort', onAbort)
+  })
 }
 
 // Open connections of one user across all torrents, plus requests still loading.

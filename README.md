@@ -19,7 +19,8 @@ episode and streams the result over HTTP through a built-in
 - Web dashboard and a terminal (TUI) dashboard: speeds, peers, disk use, buffer ahead, users,
   limits, and an estimated timestamp per viewer for watching together.
 - Background server mode; the TUI can attach to and detach from a running server.
-- Prefetch of the top results, so playback starts fast even on slow swarms.
+- Slow swarms do not time out the player: requests wait and redirect until data is there.
+  Optional prefetch of the top results.
 - Docker and docker-compose setup with optional automatic HTTPS (Caddy).
 
 ## Requirements
@@ -147,20 +148,30 @@ Several users watching the same torrent share one download and count once toward
 - At startup, data left by a crash is deleted, but only in a folder that contains the
   `.stremio-webtorrent` marker file or is empty. A wrong `DOWNLOAD_PATH` never deletes your files.
 
-## Prefetch
+## Slow starts: waiting instead of timing out
 
-Opening a torrent means fetching its metadata from peers, and players then read the file's
-header and often its index at the end. With few peers each step can take 10 to 60 seconds,
-and the player gives up ("operation timed out").
+Opening a torrent means fetching its metadata from peers, then the first piece of the file.
+With few peers each can take 10 to 60 seconds. Players give up after about 15 seconds without
+data ("operation timed out").
 
-When Stremio loads a stream list, the server therefore starts the top `PREFETCH_COUNT` (2)
-results in the background: metadata first, then the first `PREFETCH_HEAD_MB` (8) and last
-`PREFETCH_TAIL_MB` (4) of the file that would play. In a test, the first byte of a prefetched
-result took 0.001 s instead of 19.6 s.
+So a `/play` request waits at most `PLAY_WAIT_MS` (12 s) for the metadata and the first piece,
+which is downloaded with top priority. If it is still missing, the server answers with a
+redirect to the same URL (`?w=1`, `?w=2`, ...). The player follows it with a fresh timeout while
+the download continues. After `PLAY_MAX_WAITS` (8, the most ffmpeg follows) redirects, the
+request streams as usual. In total a player can wait about 110 seconds instead of 15. Each
+redirect is logged, e.g. `[play] ... first piece not ready after 12.0s, redirect 3/8`.
+`PLAY_MAX_WAITS=0` turns this off.
+
+### Prefetch (optional, off by default)
+
+With `PREFETCH_COUNT=2`, loading a stream list also starts the top 2 results in the
+background: metadata first, then the first `PREFETCH_HEAD_MB` (8) and last `PREFETCH_TAIL_MB`
+(4) of the file that would play. Clicking a prefetched result then starts at once (in a test,
+0.001 s instead of 19.6 s), at the cost of downloading torrents you may not watch.
 
 Prefetched torrents take no torrent slot, are removed first when space is needed, expire after
 `PREFETCH_TTL_MS` (2 minutes) if unused, and at most `PREFETCH_MAX` (6) are kept. Prefetch is
-skipped in `native` mode. `PREFETCH_COUNT=0` turns it off.
+skipped in `native` mode.
 
 ## Dashboards
 
@@ -259,7 +270,9 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `MAX_DISK_PER_STREAM_MB` | unlimited, minimum `128` | Disk budget per torrent. |
 | `READAHEAD_MB` | `256` | Download ahead of the playback position. |
 | `TORRENT_IDLE_MS` | `120000` | Delay before an unused torrent is removed. |
-| `PREFETCH_COUNT` | `2` | Top results prefetched per stream list; `0` turns prefetch off. |
+| `PLAY_WAIT_MS` | `12000` | How long one `/play` request waits for metadata and the first piece before redirecting. |
+| `PLAY_MAX_WAITS` | `8` | Redirects per request before it streams as usual; `0` turns waiting off. |
+| `PREFETCH_COUNT` | `0` (off) | Top results prefetched per stream list, e.g. `2`. |
 | `PREFETCH_HEAD_MB`, `PREFETCH_TAIL_MB` | `8`, `4` | Start and end of the file prefetched. |
 | `PREFETCH_TTL_MS` | `120000` | Unused prefetched torrents are removed after this. |
 | `PREFETCH_MAX` | `6` | Most prefetched torrents kept at once. |
@@ -292,9 +305,10 @@ Under `/<token>` when users exist.
 
 - **"Operation timed out" in Stremio, or slow start.** Usually too few peers. Networks that
   block outbound UDP (common in offices and on mobile) disable DHT and UDP trackers, leaving a
-  handful of peers. Pick a prefetched result (top two), retry after a few seconds, or run the
-  server on a network with UDP. Each request is logged as a `[play]` line with its time to first
-  byte, which shows where it waits.
+  handful of peers. The server already makes the player wait up to about 110 s (see
+  [Slow starts](#slow-starts-waiting-instead-of-timing-out)); raise `PLAY_WAIT_MS`, turn on
+  `PREFETCH_COUNT=2`, pick a result with more seeders, or run the server on a network with UDP.
+  Each request is logged as a `[play]` line with its wait, redirects and time to first byte.
 - **TLS error when clicking Install.** `stremio://` links need HTTPS; see
   [One-click install](#one-click-install-stremio-links), or paste the `http://` manifest URL.
 - **Stremio cannot connect / connection refused.** The server is not running. Check

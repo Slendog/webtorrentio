@@ -66,6 +66,12 @@ export const config = {
   // Hard limits. New torrents are refused (HTTP 503) instead of exceeding them.
   maxActiveTorrents: Number(env.MAX_ACTIVE_TORRENTS) || 5,
   maxTorrentsPerUser: Number(env.MAX_TORRENTS_PER_USER) || 2,
+  // Players give up when no data arrives for about 15 s. A /play request waits at most
+  // PLAY_WAIT_MS for the torrent metadata and the first piece, then answers with a redirect to
+  // the same URL, which the player follows with a fresh timeout. After PLAY_MAX_WAITS
+  // redirects the request streams as usual. PLAY_MAX_WAITS=0 turns this off.
+  playWaitMs: Number(env.PLAY_WAIT_MS) || 12_000,
+  playMaxWaits: env.PLAY_MAX_WAITS !== undefined ? Number(env.PLAY_MAX_WAITS) : 8,
   // Stream list requests per user and minute. Each one can search every enabled index.
   streamRatePerMin: Number(env.STREAM_RATE_PER_MIN) || 60,
   // Open HTTP connections one user may hold (players use 1-3 per video).
@@ -76,10 +82,11 @@ export const config = {
   maxDiskPerStreamBytes: (Number(env.MAX_DISK_PER_STREAM_MB) || 0) * 1024 ** 2,
   // How far ahead of the playback position a stream downloads.
   readaheadBytes: (Number(env.READAHEAD_MB) || 256) * 1024 ** 2,
-  // When a stream list loads, fetch metadata for this many top results in the background and
-  // download the first and last megabytes of the file that would play, so clicking one starts
-  // fast. 0 turns it off. Prefetched torrents are dropped after PREFETCH_TTL_MS if unused.
-  prefetchCount: env.PREFETCH_COUNT !== undefined ? Number(env.PREFETCH_COUNT) : 2,
+  // Optional: when a stream list loads, fetch metadata for this many top results in the
+  // background and download the first and last megabytes of the file that would play, so
+  // clicking one starts at once. Off by default (waiting with redirects covers slow starts).
+  // Prefetched torrents are dropped after PREFETCH_TTL_MS if unused.
+  prefetchCount: env.PREFETCH_COUNT !== undefined ? Number(env.PREFETCH_COUNT) : 0,
   prefetchMax: Number(env.PREFETCH_MAX) || 6,
   prefetchTtlMs: Number(env.PREFETCH_TTL_MS) || 2 * 60 * 1000,
   prefetchHeadBytes: (env.PREFETCH_HEAD_MB !== undefined ? Number(env.PREFETCH_HEAD_MB) : 8) * 1024 ** 2,
