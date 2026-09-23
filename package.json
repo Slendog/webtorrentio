@@ -19,6 +19,7 @@
   "dependencies": {
     "cheerio": "^1.2.0",
     "express": "^5.2.1",
+    "ip": "file:vendor/ip",
     "webtorrent": "^3.0.21"
   },
   "engines": {
@@ -31,5 +32,8 @@
   "homepage": "https://github.com/Slendog/webtorrentio#readme",
   "bugs": {
     "url": "https://github.com/Slendog/webtorrentio/issues"
+  },
+  "overrides": {
+    "ip": "$ip"
   }
 }

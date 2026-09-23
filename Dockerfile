@@ -4,6 +4,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
+# Local stand-in for the `ip` package, referenced by "overrides" in package.json.
+COPY vendor ./vendor
 # Install scripts must run: node-datachannel (WebRTC) downloads a prebuilt binary that
 # WebTorrent requires. utp-native is optional; if it has no prebuild for the CPU, it is skipped.
 RUN npm ci --omit=dev && npm cache clean --force

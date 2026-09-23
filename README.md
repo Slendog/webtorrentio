@@ -341,18 +341,14 @@ Under `/<token>` when users exist.
   sites.
 - **The admin socket** gives full control over the server. Only its owner can open it.
 - **`npm stop`** only signals processes that are this addon, never another program on the port.
-- **Known advisory, not exploitable here.** `npm audit` reports 4 "high" findings. They are all
-  one advisory, [GHSA-2p57-rm9w-gvfp](https://github.com/advisories/GHSA-2p57-rm9w-gvfp): the
-  `ip` package's `isPublic()` misclassifies some addresses (SSRF risk). No fixed `ip` version
-  exists. This project never calls it:
-  - the only importer of `ip` is `bittorrent-tracker/lib/server/parse-udp.js` (tracker *server*
-    code, which the addon never runs), and it only calls `ip.toString()`;
-  - nothing in the dependency tree or this code calls `isPublic`, `isPrivate` or `isLoopback`
-    from `ip`, and nothing uses the tracker `Server`;
-  - at runtime, with every `ip` function wrapped, a full session (stream list, prefetch,
-    playback, seek) made zero calls to `ip`.
-
-  Re-check after dependency upgrades (`npm ls ip`, and search `node_modules` for `from 'ip'`).
+- **`ip` package replaced.** WebTorrent's tracker library depends on `ip@2.0.1`, which has an
+  unfixed advisory in `isPublic()` ([GHSA-2p57-rm9w-gvfp](https://github.com/advisories/GHSA-2p57-rm9w-gvfp)).
+  The only code that uses `ip` is `bittorrent-tracker/lib/server/parse-udp.js`, and it only calls
+  `toString()`. `package.json` therefore overrides `ip` with a local stand-in, `vendor/ip`, that
+  contains just that function (copied from `ip`, MIT). The vulnerable code is not installed, and
+  `npm audit` reports no vulnerabilities. If a future dependency needs another `ip` function, the
+  server fails at startup with "... is not a function"; check with `npm ls ip` after upgrades.
+  The upstream fix is [bittorrent-tracker#550](https://github.com/webtorrent/bittorrent-tracker/pull/550).
 - **Reporting.** Please report vulnerabilities privately through GitHub's
   [security advisories](https://github.com/Slendog/webtorrentio/security/advisories/new) rather
   than in public issues.
@@ -399,6 +395,7 @@ export `{ name, types, search(query) }` from a module and register it in `src/sc
 
 ## License
 
-Released into the public domain under [The Unlicense](LICENSE). Anyone may use, copy, modify
+Released into the public domain under [The Unlicense](LICENSE), except `vendor/ip`, which contains
+code from the `ip` package under its MIT license ([vendor/ip/LICENSE](vendor/ip/LICENSE)). Anyone may use, copy, modify
 and distribute the code for any purpose, without conditions. The legal notes above still apply
 to how the software is used.
