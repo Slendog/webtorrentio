@@ -10,7 +10,11 @@ const ALL = { yts, tpb, eztv, nyaa, '1337x': x1337 }
 
 export const SCRAPER_KEYS = Object.keys(ALL)
 
-const enabledScrapers = (keys = config.scrapers) => keys.map(k => ALL[k.toLowerCase()]).filter(Boolean)
+// Known index keys from a list; "all" stands for every index.
+export const resolveScraperKeys = (keys = config.scrapers) =>
+  keys.includes('all') ? SCRAPER_KEYS : keys.filter(k => ALL[k.toLowerCase()])
+
+const enabledScrapers = keys => resolveScraperKeys(keys).map(k => ALL[k.toLowerCase()])
 
 const peers = t => (t.seeders || 0) + (t.leechers || 0)
 

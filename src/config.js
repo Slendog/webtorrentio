@@ -47,7 +47,9 @@ export const config = {
   // "native": Stremio receives the infoHash and uses its own torrent engine.
   // "both": return both variants for every torrent.
   mode: env.STREAM_MODE || 'webtorrent',
-  scrapers: (env.SCRAPERS || 'yts,tpb,eztv,nyaa,1337x').split(',').map(s => s.trim()).filter(Boolean),
+  // Torrent indexes to search. None by default: each server owner opts in, either here
+  // ("yts,eztv", or "all") or per install on the Configure page.
+  scrapers: (env.SCRAPERS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
   downloadPath: env.DOWNLOAD_PATH || path.join(os.tmpdir(), 'stremio-webtorrent'),
   // Torrents with no active HTTP stream are destroyed (and their data deleted) after this delay.
   idleTimeoutMs: Number(env.TORRENT_IDLE_MS) || 2 * 60 * 1000,

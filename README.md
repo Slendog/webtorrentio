@@ -11,7 +11,7 @@ episode and streams the result over HTTP through a built-in
 
 ## Features
 
-- Stream results from several torrent indexes, sorted by peer count, with seeders, leechers,
+- Stream results from torrent indexes you enable (none are enabled by default), sorted by peer count, with seeders, leechers,
   size and a health rating in Stremio's stream list.
 - HTTP streaming with seeking; only the part being watched plus a readahead window is downloaded.
 - Disk limits for the whole cache and per stream; the cache rolls instead of growing.
@@ -42,6 +42,13 @@ npm start
 
 In Stremio, open the addon search bar, paste `http://127.0.0.1:7000/manifest.json` and install.
 Stop the server with Ctrl+C or `npm stop`.
+
+**No indexes are searched by default.** Until you enable some, Stremio shows a single
+"No torrent indexes enabled" entry that opens the Configure page. Enable indexes in one of two
+ways:
+
+- For the whole server: `SCRAPERS=yts,eztv npm start` (or `SCRAPERS=all`). See [Indexes](#indexes).
+- Per install: Stremio's **Configure** button, then tick the indexes and install again.
 
 ## Running the server
 
@@ -195,7 +202,8 @@ the network), so you can close and reopen it while the server keeps running.
 Stremio's **Configure** button opens `<PUBLIC_URL>/<token>/configure`, which sets:
 
 - **Server URL for stream links**: the address this device uses to reach the server.
-- **Torrent sites**: which indexes are searched.
+- **Torrent indexes**: which indexes are searched. None are ticked unless the server enables
+  some with `SCRAPERS`; unticking all switches searching off for this install.
 - **Stream mode**: `webtorrent` (through this server), `native` (Stremio's own torrent engine),
   or `both`.
 
@@ -235,7 +243,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PUBLIC_URL` | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL for install and stream links. |
 | `STREAM_URL` | `PUBLIC_URL` if set, else `http://127.0.0.1:$PORT` | Base URL for `/play` stream links only. |
 | `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
-| `SCRAPERS` | `yts,tpb,eztv,nyaa,1337x` | Indexes to search, comma-separated. |
+| `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x`), or `all`. |
 | `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
 | `STATE_FILE` | `state/state.json` | Saved users and limits. The admin socket and background log live next to it. |
 | `ADMIN_SOCKET` | `state/admin.sock` | Unix socket between the TUI and the server. |
@@ -326,7 +334,8 @@ Under `/<token>` when users exist.
 | `nyaa` | Anime | RSS feed |
 | `1337x` | Movies, TV | HTML (often blocked by Cloudflare) |
 
-Each index module in `src/scrapers/` lists mirror domains, which change often. To add an index,
+None is enabled by default; enable them with `SCRAPERS` or the Configure page. Unknown keys
+are ignored. Each index module in `src/scrapers/` lists mirror domains, which change often. To add an index,
 export `{ name, types, search(query) }` from a module and register it in `src/scrapers/index.js`.
 
 ## Legal and safety
@@ -336,8 +345,8 @@ export `{ name, types, search(query) }` from a module and register it in `src/sc
   project does not operate or control, and is not affiliated with.
 - **You are responsible.** Downloading or sharing copyrighted material without permission is
   illegal in many countries. Use this software only for content you have the right to access,
-  such as public-domain works, Creative Commons releases, or your own files. Disable indexes you
-  do not want with `SCRAPERS` or the Configure page.
+  such as public-domain works, Creative Commons releases, or your own files. No index is searched
+  until you enable it with `SCRAPERS` or the Configure page.
 - **BitTorrent uploads.** While a torrent is active, WebTorrent also uploads pieces to other
   peers, so you distribute what you stream. Peers and trackers see your IP address.
 - **Not affiliated** with Stremio, WebTorrent, or any index listed above. Names are used only to

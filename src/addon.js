@@ -4,7 +4,7 @@ import { getMeta } from './meta.js'
 import { formatBytes, parseTags, TRACKERS } from './parse.js'
 import { rememberScraped } from './registry.js'
 import { prefetch } from './torrent.js'
-import { SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
+import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
 export const manifest = {
   id: 'community.webtorrent.scraper',
@@ -98,8 +98,8 @@ export function parseUserConfig (encoded) {
   const out = {}
   if (typeof raw.url === 'string' && /^https?:\/\/[^\s/]+/.test(raw.url)) out.url = raw.url.replace(/\/+$/, '')
   if (Array.isArray(raw.scrapers)) {
-    const keys = raw.scrapers.filter(k => SCRAPER_KEYS.includes(k))
-    if (keys.length) out.scrapers = keys
+    // An empty list is valid: it switches all indexes off for this install.
+    out.scrapers = raw.scrapers.filter(k => SCRAPER_KEYS.includes(k))
   }
   if (STREAM_MODES.includes(raw.mode)) out.mode = raw.mode
   return out
@@ -125,8 +125,19 @@ async function findTorrents (type, id, scraperKeys) {
 
 // Stremio stream response. playBase is the URL prefix of /play links, including the
 // user's access token, so every user gets links that only work for them.
-export async function streamResponse (type, id, playBase, userConfig = {}) {
-  const scraperKeys = userConfig.scrapers || config.scrapers
+export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl) {
+  const scraperKeys = resolveScraperKeys(userConfig.scrapers || config.scrapers)
+  // Indexes are off by default. Show one entry that explains it instead of an empty list.
+  if (!scraperKeys.length) {
+    return {
+      streams: [{
+        name: 'webtorrentio\nsetup',
+        title: 'No torrent indexes enabled.\nOpen this to choose them on the Configure page,\nor set SCRAPERS on the server.',
+        externalUrl: configureUrl
+      }],
+      cacheMaxAge: 60
+    }
+  }
   const mode = userConfig.mode || config.mode
   try {
     const { query, torrents } = await findTorrents(type, id, scraperKeys)

@@ -57,7 +57,7 @@ export function configurePage ({ manifest, addonBase, defaults, scraperKeys, mod
       <input id="url" type="url" value="${esc(value)}" required style="width:100%;margin:6px 0 4px;padding:10px;border-radius:6px;border:1px solid #3a3160;background:#2a2245;color:#eee;font:inherit">
       <p class="small" style="margin-top:0">Address this device uses to reach the server, for example http://192.168.1.20:7000. Default: ${esc(defaults.url)}</p>
 
-      <p class="small">Torrent sites</p>
+      <p class="small">Torrent indexes to search. None are searched until you tick them. Only stream content you have the right to access.</p>
       ${scraperKeys.map(k => `<label style="display:inline-block;margin:0 14px 8px 0"><input type="checkbox" name="scraper" value="${esc(k)}"${enabled.includes(k) ? ' checked' : ''}> ${esc(k)}</label>`).join('')}
 
       <p class="small">Stream mode</p>
@@ -78,7 +78,7 @@ export function configurePage ({ manifest, addonBase, defaults, scraperKeys, mod
         const url = document.getElementById('url').value.trim().replace(/\\/+$/, '')
         if (url && url !== defaults.url) cfg.url = url
         const scrapers = [...form.querySelectorAll('[name=scraper]:checked')].map(i => i.value)
-        if (scrapers.length && scrapers.join() !== defaults.scrapers.join()) cfg.scrapers = scrapers
+        if (scrapers.join() !== defaults.scrapers.join()) cfg.scrapers = scrapers
         const mode = document.getElementById('mode').value
         if (mode !== defaults.mode) cfg.mode = mode
         const json = JSON.stringify(cfg)

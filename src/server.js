@@ -8,7 +8,7 @@ import { config } from './config.js'
 import { dashboardHtml } from './dashboard.js'
 import { configurePage, installPage, lockedPage } from './pages.js'
 import { startAdmin } from './admin.js'
-import { SCRAPER_KEYS } from './scrapers/index.js'
+import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import { LimitError, openStream, removeByHash, resolveFile, shutdown, status } from './torrent.js'
 
@@ -42,7 +42,7 @@ configurable.get('/manifest.json', (req, res) => res.json(manifest))
 configurable.get('/configure', (req, res) => res.type('html').send(configurePage({
   manifest,
   addonBase: config.publicUrl + userBase(req),
-  defaults: { url: config.streamUrl, scrapers: config.scrapers, mode: config.mode },
+  defaults: { url: config.streamUrl, scrapers: resolveScraperKeys(), mode: config.mode },
   scraperKeys: SCRAPER_KEYS,
   modes: STREAM_MODES,
   current: req.userConfig
@@ -52,7 +52,7 @@ configurable.get('/stream/:type/:id.json', async (req, res) => {
   const { type, id } = req.params
   if (!manifest.types.includes(type)) return res.json({ streams: [] })
   const playBase = (req.userConfig.url || config.streamUrl) + userBase(req)
-  res.json(await streamResponse(type, id, playBase, req.userConfig))
+  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`))
 })
 
 // ---- All routes of one user
@@ -211,7 +211,7 @@ for (const server of servers) {
 
 function startupSummary () {
   const lines = [
-    `Stream mode: ${config.mode}; scrapers: ${config.scrapers.join(', ')}`,
+    `Stream mode: ${config.mode}; indexes: ${resolveScraperKeys().join(', ') || 'none (set SCRAPERS, e.g. SCRAPERS=all, or choose them on the Configure page)'}`,
     `Limits: ${config.maxActiveTorrents} torrents total, ${config.maxTorrentsPerUser} per user, ` +
       `disk ${config.maxDiskBytes ? `${config.maxDiskBytes / 1024 ** 3} GB` : 'unlimited'} total, ` +
       `${config.maxDiskPerStreamBytes ? `${config.maxDiskPerStreamBytes / 1024 ** 2} MB` : 'unlimited'} per stream, ` +
