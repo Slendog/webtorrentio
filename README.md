@@ -1,300 +1,345 @@
-# Stremio WebTorrent Scraper Addon
+# webtorrentio
 
-A Stremio addon that scrapes public torrent indexes for a movie or episode and streams the
-result over HTTP through a built-in [WebTorrent](https://github.com/webtorrent/webtorrent) client.
+A [Stremio](https://www.stremio.com) addon that searches public torrent indexes for a movie or
+episode and streams the result over HTTP through a built-in
+[WebTorrent](https://github.com/webtorrent/webtorrent) client.
 
-## How it works
+> **Read [Legal and safety](#legal-and-safety) before using this.** This project hosts no media
+> and links to none. It is a tool: what you search for and stream, and whether that is legal
+> where you live, is your responsibility. BitTorrent shares data with other peers and shows
+> them your IP address.
 
-1. Stremio asks for streams for an IMDb id (`tt0133093`, or `tt0903747:1:1` for episodes).
-2. The addon looks up the title and year on Cinemeta.
-3. The addon queries all enabled scrapers in parallel. A blocked or broken site drops only its own results.
-4. Results are filtered by title, year, and episode, deduplicated by info hash, and sorted by
-   peer count (seeders + leechers), highest first.
-5. Each result becomes a stream URL: `http://<server>/<token>/play/<infoHash>/auto?s=1&e=1`.
-6. When Stremio opens that URL, WebTorrent fetches the torrent metadata and picks the right file.
-   For a season pack, it picks the matching episode. For a movie, it picks the largest video.
-   WebTorrent then downloads pieces on demand for the requested byte range, so seeking works.
-7. When no connection reads from a torrent for `TORRENT_IDLE_MS`, the addon destroys the torrent
-   and deletes its data.
+## Features
 
-## Scrapers
+- Stream results from several torrent indexes, sorted by peer count, with seeders, leechers,
+  size and a health rating in Stremio's stream list.
+- HTTP streaming with seeking; only the part being watched plus a readahead window is downloaded.
+- Disk limits for the whole cache and per stream; the cache rolls instead of growing.
+- Several users with personal access tokens, and hard limits per user and per server.
+- Web dashboard and a terminal (TUI) dashboard: speeds, peers, disk use, buffer ahead, users,
+  limits, and an estimated timestamp per viewer for watching together.
+- Background server mode; the TUI can attach to and detach from a running server.
+- Prefetch of the top results, so playback starts fast even on slow swarms.
+- Docker and docker-compose setup with optional automatic HTTPS (Caddy).
 
-| Key     | Site              | Content          | Method                    |
-|---------|-------------------|------------------|---------------------------|
-| `yts`   | YTS / YIFY        | Movies           | JSON API (by IMDb id)     |
-| `tpb`   | The Pirate Bay    | Movies, TV       | apibay JSON API           |
-| `eztv`  | EZTV              | TV               | JSON API (by IMDb id)     |
-| `nyaa`  | Nyaa              | Anime            | RSS feed                  |
-| `1337x` | 1337x             | Movies, TV       | HTML scraping (Cloudflare may block it) |
+## Requirements
 
-Each scraper has a list of mirror domains in its file under `src/scrapers/`. Torrent sites
-change domains often, so update the mirror lists when a site moves. To add a site, create a
-module that exports `{ name, types, search(query) }` and register it in `src/scrapers/index.js`.
+- Node.js 22 or newer (WebTorrent 3 needs it), and npm.
+- macOS or Linux. The dashboard's admin connection uses a Unix socket, and `npm stop` uses
+  `lsof`. Windows is untested.
+- Outbound UDP helps a lot (DHT and UDP trackers). See [Troubleshooting](#troubleshooting).
+- Optional: Docker with Compose for server installs, [mkcert](https://github.com/FiloSottile/mkcert)
+  for local HTTPS.
 
-## Run
+## Quick start
 
 ```sh
+git clone https://github.com/Slendog/webtorrentio.git
+cd webtorrentio
 npm install
 npm start
-npm stop    # stops the server and deletes downloaded torrent data
 ```
 
-See [TUI dashboard](#tui-dashboard) for running in the background.
+In Stremio, open the addon search bar, paste `http://127.0.0.1:7000/manifest.json` and install.
+Stop the server with Ctrl+C or `npm stop`.
 
-Then paste `http://127.0.0.1:7000/manifest.json` into the Stremio addon search bar.
-
-### One-click install (HTTPS)
-
-Stremio opens `stremio://` links over HTTPS. Over plain HTTP, the link fails with a TLS error.
-To use one-click install, create a locally trusted certificate with
-[mkcert](https://github.com/FiloSottile/mkcert):
+## Running the server
 
 ```sh
-brew install mkcert
-mkcert -install    # adds a local CA to the system trust store (asks for your password)
-npm run certs      # writes certs/cert.pem and certs/key.pem
+npm start                # foreground, log in the terminal
+npm start background     # background, log in state/server.log
+npm start dashboard      # TUI for the running server; starts one in the background if needed
+npm stop                 # stop the server, however it was started
+```
+
+`npm run background` and `npm run dashboard` do the same as the `npm start` variants.
+Stopping always removes the downloaded torrent data. The log records why a server stopped
+(`npm stop`, dashboard, `SIGINT`, `SIGTERM`).
+
+## Installing in Stremio
+
+### Same computer
+
+Paste `http://127.0.0.1:7000/manifest.json` into the Stremio addon search bar. With access
+tokens enabled, use your personal link instead (see [Users and access tokens](#users-and-access-tokens)).
+
+### One-click install (`stremio://` links)
+
+Stremio opens `stremio://` links over HTTPS, so over plain HTTP the link fails with a TLS
+error. For one-click install on your own computer, create a locally trusted certificate:
+
+```sh
+brew install mkcert      # or your package manager
+mkcert -install          # adds a local certificate authority (asks for your password)
+npm run certs            # writes certs/cert.pem and certs/key.pem
 npm start
 ```
 
-When `certs/` exists, the server also listens for HTTPS on port 7443. The manifest and install
-links use HTTPS. Stream links stay on plain HTTP, because Stremio's player may not trust the
-local certificate.
-Then install the addon in one of these ways:
+With `certs/` present, the server also listens on HTTPS port 7443. Open
+`https://127.0.0.1:7443/` and click **Install in Stremio**. Stream links stay on plain HTTP,
+because Stremio's player may not trust the local certificate.
 
-- Open `https://127.0.0.1:7443/` in a browser and click **Install in Stremio**.
-- Open `stremio://127.0.0.1:7443/manifest.json` directly. `GET /install` redirects to this URL.
+### Other devices (TV, phone)
 
-## TUI dashboard
+Set `PUBLIC_URL` to an address the device can reach, for example
+`PUBLIC_URL=http://192.168.1.20:7000 npm start`, and install from that address. On a public
+server, use HTTPS with a domain (see [Docker](#docker-linux-server)). Each install can also
+override the stream link address with Stremio's **Configure** button.
 
-```sh
-npm start                # server in the foreground (plain log output)
-npm start background     # server in the background, log in state/server.log
-npm start dashboard      # dashboard for the running server; starts one in the background if none runs
-npm stop                 # stop the server, wherever it was started
-```
+## Users and access tokens
 
-`npm run background` and `npm run dashboard` do the same. The dashboard is a separate program
-that connects to the server over a local admin socket (`state/admin.sock`, readable by the owner
-only, never on the network). Close it and reopen it as often as you like; the server keeps
-running.
+Without users, anyone who can reach the server can use it. Add users before making the server
+reachable from other devices or the internet.
 
-The dashboard shows:
+- In the TUI dashboard: press `a`. The token and install link are shown once; press `t` to see
+  tokens later.
+- Or in the environment: `npm run token` prints a random token, then
+  `ACCESS_TOKENS="alice:<token1>,bob:<token2>" npm start`.
 
-- Torrents: speed, peers, disk use, state, and for every connection the read position and how
-  much is downloaded ahead.
+Each user gets a personal base URL, `<PUBLIC_URL>/<token>/`, with an install page. Every route
+lives under that prefix, and stream links include the token, so links work only for their user.
+Wrong or missing tokens get `404`; the bare root page only says a personal link is needed.
+Tokens in `ACCESS_TOKENS` must be at least 16 characters (dashboard tokens are 32).
 
-Both dashboards also show a **Watching** line per torrent for watching together: each user's
-estimated timestamp and how far behind the leader they are, e.g.
-`bob ≈ 41:40 / 2:16:00 ahead   alice ≈ 1:17 / 2:16:00 40:23 behind`. The estimate is the read
-position scaled by the runtime from Cinemeta. It assumes a constant bitrate and runs ahead of the
-real playback by what the player has buffered, so treat it as accurate to about a minute. Short
-connections that read less than 8 MB (players probing a file) are left out. A plan for real
-synchronized playback in the browser is in [docs/watch-together-plan.md](docs/watch-together-plan.md).
-
-Both dashboards count *connections*, not viewers. A player often opens two or three connections
-to a file at the start (for example to read the index at the end of an MKV or MP4), and closes
-the extra ones after a few seconds. `/status` reports the count as `connections`.
-- Users with their install links. Tokens are hidden until you press **t**.
-- Limits, and the server log.
-
-Keys:
-
-| Key | Action |
-|-----|--------|
-| `a` | Add a user. The dashboard generates a token and shows the install link. |
-| `d` | Delete a user added in the dashboard. Their install links stop working at once. |
-| `t` | Show or hide tokens. |
-| `1`-`6` | Change a limit: torrents total, torrents per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes). |
-| `x` | Remove a torrent, even while people watch it. |
-| `b`, `q`, Ctrl+C | Close the dashboard. The server keeps running in the background. |
-| `s` | Stop the server (asks first). Streams end and torrent data is deleted. |
-
-Changes apply immediately and are saved to `STATE_FILE` (default `state/state.json`, readable by
-the owner only because it holds tokens). On the next start, saved limits override the
-environment, and saved users are loaded next to the ones in `ACCESS_TOKENS`. Users from
-`ACCESS_TOKENS` cannot be deleted in the dashboard; remove them from the environment instead.
-
-With at least one user, every route needs a token. Deleting the last user makes the addon open
-again. Both take effect without a restart.
-
-In Docker, open the dashboard inside the running container:
-
-```sh
-docker compose exec addon node src/index.js dashboard
-```
-
-## Access tokens (multiple users)
-
-Without `ACCESS_TOKENS`, anyone who can reach the server can use it. Set one token per user
-before exposing the server to other devices or the internet:
-
-```sh
-npm run token        # prints a random token
-ACCESS_TOKENS="alice:<token1>,bob:<token2>" npm start
-```
-
-Each user then gets a personal base URL, `<PUBLIC_URL>/<token>/`. The startup log prints one
-per user. Every route below lives under that prefix, and stream links include the token, so a
-link works only for its user. Requests with a missing or wrong token get `404`. The server
-refuses to start with tokens shorter than 16 characters.
+Users added in the dashboard, and limits changed there, are saved to `state/state.json`
+(readable by the owner only). Saved limits override the environment on the next start. Users
+from `ACCESS_TOKENS` can only be removed from the environment. Adding the first user switches
+token checks on, and deleting the last one switches them off, without a restart.
 
 ## Limits
 
-Limits are hard: when one is reached, the server refuses to add a torrent.
+Hard limits; when one is reached, the server refuses a new torrent:
 
-- `MAX_TORRENTS_PER_USER` (default 2): torrents one user can stream at the same time. Above the
-  limit, `/play` answers `429`. Joining a torrent the user already streams always works.
-- `MAX_ACTIVE_TORRENTS` (default 5): torrents on the whole server. When it is full, the server
-  first removes idle torrents. If none are idle, `/play` answers `503 Server busy`.
-- `MAX_DISK_GB` (default unlimited): disk budget for all torrent data. See [Disk cache](#disk-cache).
-- `MAX_DISK_PER_STREAM_MB` (default unlimited, minimum 128): disk budget for one torrent, shared
-  by everyone watching it.
-- Several users can watch the same torrent. It counts once toward the server limit.
+| Limit | Default | When reached |
+|---|---|---|
+| `MAX_TORRENTS_PER_USER` | 2 | `/play` answers `429`. Joining a torrent already in use always works. |
+| `MAX_ACTIVE_TORRENTS` | 5 | Idle torrents are removed first; if none are idle, `503 Server busy`. |
+| `MAX_DISK_GB` | unlimited | The cache rolls (below). `507` only if not even one more viewer fits. |
+| `MAX_DISK_PER_STREAM_MB` | unlimited (minimum 128) | Per torrent, shared by everyone watching it. |
+
+Several users watching the same torrent share one download and count once toward
+`MAX_ACTIVE_TORRENTS`.
+
+## Disk cache
+
+- Data lives in `DOWNLOAD_PATH`, one folder per torrent, one file per piece.
+- A stream downloads only `READAHEAD_MB` (default 256) ahead of the playback position.
+- With a disk limit, the cache stops growing at the limit and playback continues. Every second
+  the server checks the sizes and deletes, in this order: pieces of a torrent that is over its
+  per-stream limit, idle torrents, then pieces of active streams that are far from anyone's
+  playback position (already watched pieces first).
+- Each viewer keeps a protected window: 32 MB behind the playback position plus the readahead.
+  The readahead shrinks automatically so all windows fit in 80% of each limit; for example
+  `MAX_DISK_PER_STREAM_MB=150` gives 72 MB.
+- Seeking back into deleted pieces works; they are downloaded again.
+- The cache can exceed the limit for about a second, by what was downloaded in that time.
+- A torrent is deleted `TORRENT_IDLE_MS` (2 minutes) after its last connection closes, on
+  **Remove**, on eviction, and on shutdown.
+- At startup, data left by a crash is deleted, but only in a folder that contains the
+  `.stremio-webtorrent` marker file or is empty. A wrong `DOWNLOAD_PATH` never deletes your files.
 
 ## Prefetch
 
 Opening a torrent means fetching its metadata from peers, and players then read the file's
-header and often its index at the end before playing. On a network with few peers each step can
-take 10 to 60 seconds, and the player gives up with "operation timed out".
+header and often its index at the end. With few peers each step can take 10 to 60 seconds,
+and the player gives up ("operation timed out").
 
-So when Stremio loads a stream list, the server starts the top `PREFETCH_COUNT` (default 2)
-results in the background: it fetches their metadata, then downloads the first
-`PREFETCH_HEAD_MB` (8) and last `PREFETCH_TAIL_MB` (4) of the file that would play. Clicking a
-prefetched result starts at once; in a test, the first byte took 0.001 s instead of 19.6 s.
+When Stremio loads a stream list, the server therefore starts the top `PREFETCH_COUNT` (2)
+results in the background: metadata first, then the first `PREFETCH_HEAD_MB` (8) and last
+`PREFETCH_TAIL_MB` (4) of the file that would play. In a test, the first byte of a prefetched
+result took 0.001 s instead of 19.6 s.
 
-- Prefetched torrents do not take a torrent slot (`MAX_ACTIVE_TORRENTS`) and are the first
-  thing removed when disk space is needed.
-- Unused ones are removed after `PREFETCH_TTL_MS` (2 minutes). At most `PREFETCH_MAX` (6) are
-  kept.
-- Both dashboards mark them as *prefetched*.
-- Not done in `native` mode, where Stremio loads torrents itself. `PREFETCH_COUNT=0` turns it off.
+Prefetched torrents take no torrent slot, are removed first when space is needed, expire after
+`PREFETCH_TTL_MS` (2 minutes) if unused, and at most `PREFETCH_MAX` (6) are kept. Prefetch is
+skipped in `native` mode. `PREFETCH_COUNT=0` turns it off.
 
-## Disk cache
+## Dashboards
 
-- Torrent data lives in `DOWNLOAD_PATH`, one folder per info hash, one file per piece.
-- A stream downloads only `READAHEAD_MB` (default 256) ahead of the playback position, not the
-  rest of the file.
-- There are two limits. Set either or both:
-  - `MAX_DISK_GB`: all torrent data together.
-  - `MAX_DISK_PER_STREAM_MB`: one torrent's data. Two people watching the same torrent share it.
-- With a limit set, the cache rolls: it stops growing at the limit, and streams keep playing.
-  Every second the server checks the sizes:
-  1. A torrent over `MAX_DISK_PER_STREAM_MB` deletes its own pieces that are far from the
-     playback position.
-  2. When the total is over `MAX_DISK_GB`, the server removes idle torrents, least recently used
-     first, then deletes far-away pieces of active streams.
-  Already watched pieces are deleted first, then pieces left over from seeking.
-- Each viewer keeps a window on disk: 32 MB behind the playback position plus the readahead.
-  The server shrinks the readahead automatically so all windows fit in 80% of each limit.
-  Example: `MAX_DISK_PER_STREAM_MB=150` gives a readahead of 72 MB.
-- Seeking back to deleted pieces works. The server downloads them again, so it takes a moment.
-- The cache can go over the limit for about a second, by the amount downloaded in that time.
-- When the limit is too small for one more viewer's minimum window (64 MB), new torrents get
-  `507 Disk cache full`.
-- A torrent and its folder are deleted 2 minutes (`TORRENT_IDLE_MS`) after its last connection
-  closes, on **Remove**, on eviction, and on a normal shutdown.
-- At startup, the server deletes data left behind by a crash. It only does this in a folder that
-  contains its `.stremio-webtorrent` marker file, or in an empty folder, so a wrong
-  `DOWNLOAD_PATH` never deletes unrelated files.
+### Web dashboard
 
-## Settings (Configure button)
+`<PUBLIC_URL>/<token>/dashboard` (or `/dashboard` without users). Per torrent: download and
+upload speed with a 90-second graph, connected peers, progress, disk use, the file being
+played, who is watching, and for each connection how much is downloaded ahead. **Remove** stops
+a torrent unless another user is streaming it.
 
-The addon supports Stremio's **Configure** button (`/<token>/configure`). The page sets:
+### TUI dashboard
 
-- **Server URL for stream links**: the address this device uses to reach the server, for example
-  `http://192.168.1.20:7000`. Useful when the server is known under another address on a TV or phone.
-- **Torrent sites**: which scrapers run.
-- **Stream mode**: `webtorrent`, `native`, or `both`.
+`npm start dashboard` opens a full-screen terminal dashboard. It needs an interactive terminal.
+It connects to the server over a local Unix socket (`state/admin.sock`, owner only, never on
+the network), so you can close and reopen it while the server keeps running.
 
-The page builds a new manifest URL that holds the settings,
-`<PUBLIC_URL>/<token>/c/<settings>/manifest.json`, and installs it. To change settings, click
-**Configure** again and reinstall.
+| Key | Action |
+|-----|--------|
+| `a` | Add a user; shows the install link once. |
+| `d` | Delete a user added in the dashboard; their links stop working at once. |
+| `t` | Show or hide tokens. |
+| `1`–`6` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes). |
+| `x` | Remove a torrent, even while people watch it. |
+| `b`, `q`, Ctrl+C | Close the dashboard; the server keeps running. |
+| `s` | Stop the server (asks first). |
 
-## Endpoints
+### Reading the numbers
 
-All of these are under `/<token>` when access tokens are set.
+- **Connections, not viewers.** Players often open two or three connections at the start, for
+  example to read the index at the end of an MKV or MP4, and close the extra ones after a few
+  seconds.
+- **Watching** shows each user's estimated timestamp and the gap to the user furthest ahead,
+  for watching together, e.g. `bob ≈ 41:40 / 2:16:00 ahead   alice ≈ 1:17 / 2:16:00 40:23 behind`.
+  It is the read position scaled by the runtime from Cinemeta, so it assumes a constant bitrate
+  and runs ahead of the screen by what the player buffered: accurate to about a minute.
+  Connections that read less than 8 MB are ignored. A plan for synchronized playback in the
+  browser is in [docs/watch-together-plan.md](docs/watch-together-plan.md).
 
-- `GET /`: install page with a `stremio://` button.
-- `GET /install`: redirect to the `stremio://` install link.
-- `GET /configure`: settings page.
-- `GET /dashboard`: live stats page. Open it in a browser next to Stremio. For each torrent it shows
-  download and upload speed with a 90-second graph, connected seeders and leechers, progress,
-  the file being played, which users are watching, how much each viewer has downloaded ahead of
-  the playback position, and the seeders and leechers reported at scrape
-  time. It refreshes every 1.5 seconds. **Remove** stops a torrent and deletes its data, unless
-  another user is streaming it.
-- `GET /status`: the same stats as JSON.
-- `DELETE /api/torrents/:infoHash`: stop a torrent and delete its data. `409` if another user streams it.
-- `GET /play/:infoHash/:fileIdx`: raw HTTP stream with Range support. `fileIdx` is a number or `auto`.
-- `GET /health`: always public, for health checks.
+## Configure button (per-install settings)
+
+Stremio's **Configure** button opens `<PUBLIC_URL>/<token>/configure`, which sets:
+
+- **Server URL for stream links**: the address this device uses to reach the server.
+- **Torrent sites**: which indexes are searched.
+- **Stream mode**: `webtorrent` (through this server), `native` (Stremio's own torrent engine),
+  or `both`.
+
+The settings are stored in the install URL (`/<token>/c/<settings>/manifest.json`), so each
+device keeps its own; change them by configuring and installing again. Without settings, the
+server defaults apply.
 
 ## Docker (Linux server)
 
 ```sh
 cp .env.example .env
-docker compose run --rm addon node scripts/token.js   # once per user, paste into ACCESS_TOKENS
+docker compose run --rm addon node scripts/token.js    # once per user, paste into ACCESS_TOKENS
 # edit .env: PUBLIC_URL, ACCESS_TOKENS, limits
 docker compose up -d --build
-docker compose logs addon                             # prints each user's install page
+docker compose logs addon                              # shows each user's install page
+docker compose exec addon node src/index.js dashboard  # TUI inside the running container
 ```
 
-Open ports 7000/tcp (addon) and 6881/tcp+udp (BitTorrent peers and DHT) in the server firewall.
-Torrent data lives in the `torrent-data` volume and is deleted when a torrent goes idle.
+Open ports 7000/tcp (addon) and 6881/tcp+udp (BitTorrent peers, DHT). Torrent data lives in the
+`torrent-data` volume, users and saved limits in `addon-state`.
 
-### HTTPS with a domain
-
-One-click `stremio://` install and Stremio Web need HTTPS. The compose file includes an optional
-[Caddy](https://caddyserver.com) proxy that gets a Let's Encrypt certificate automatically:
-
-1. Point a DNS record for your domain at the server and open ports 80 and 443.
-2. In `.env`, set `DOMAIN=addon.example.com` and `PUBLIC_URL=https://addon.example.com`.
-3. Run `docker compose --profile https up -d --build`.
-
-With Caddy in front, you can close port 7000 to the outside.
+**HTTPS with a domain** (needed for one-click install from other devices and for Stremio Web):
+point a DNS record at the server, open ports 80 and 443, set `DOMAIN=addon.example.com` and
+`PUBLIC_URL=https://addon.example.com` in `.env`, then run
+`docker compose --profile https up -d --build`. The included [Caddy](https://caddyserver.com)
+proxy gets a Let's Encrypt certificate automatically; port 7000 can then be closed to the outside.
 
 ## Configuration
 
-| Variable              | Default                          | Description |
-|-----------------------|----------------------------------|-------------|
-| `PORT`                | `7000`                           | HTTP port. |
-| `HTTPS_PORT`          | `7443`                           | HTTPS port. Used only when a certificate exists. |
-| `TLS_CERT`, `TLS_KEY` | `certs/cert.pem`, `certs/key.pem`| Certificate and key for HTTPS. |
-| `PUBLIC_URL`          | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL in stream and install links. Set this when Stremio runs on another device (TV, phone). |
-| `STREAM_URL`          | `PUBLIC_URL` if set, else `http://127.0.0.1:$PORT` | Base URL of `/play` stream links. |
-| `STREAM_MODE`         | `webtorrent`                     | `webtorrent`: stream through this server. `native`: return info hashes for Stremio's own engine. `both`: return both. |
-| `SCRAPERS`            | `yts,tpb,eztv,nyaa,1337x`        | Enabled scrapers, comma-separated. |
-| `DOWNLOAD_PATH`       | `$TMPDIR/stremio-webtorrent`     | Temporary torrent data. |
-| `TORRENT_IDLE_MS`     | `120000` (2 minutes)             | Delay before an unused torrent is destroyed. |
-| `ACCESS_TOKENS`       | (empty)                          | Users and tokens, `name:token,name:token`. Empty (and no users in the state file) means open access. |
-| `STATE_FILE`          | `state/state.json`               | Users and limits saved by the TUI dashboard. The admin socket and background log live in the same folder. |
-| `ADMIN_SOCKET`        | `state/admin.sock`               | Unix socket the dashboard uses to talk to the server. |
-| `MAX_ACTIVE_TORRENTS` | `5`                              | Hard limit of torrents on the server. Idle torrents are evicted first. |
-| `MAX_TORRENTS_PER_USER` | `2`                            | Hard limit of torrents one user streams at the same time. |
-| `MAX_DISK_GB`         | unlimited                        | Disk budget for all torrent data. |
-| `MAX_DISK_PER_STREAM_MB` | unlimited (minimum 128)       | Disk budget for one torrent's data. |
-| `READAHEAD_MB`        | `256`                            | How far ahead of the playback position a stream downloads. |
-| `TORRENT_PORT`        | random (`6881` in Docker)        | Port for incoming BitTorrent peers and DHT. |
-| `MAX_CONNS`           | `55`                             | Maximum peer connections per torrent. |
-| `MAX_RESULTS`         | `30`                             | Maximum torrents returned per request. |
-| `SCRAPER_TIMEOUT_MS`  | `10000`                          | Timeout for each scraper. |
-| `CACHE_TTL_MS`        | `1800000`                        | Cache duration for scrape results. |
-| `PREFETCH_COUNT`      | `2`                              | Top results to load in the background when a stream list loads. `0` turns it off. |
-| `PREFETCH_HEAD_MB`, `PREFETCH_TAIL_MB` | `8`, `4`        | Start and end of the file downloaded for prefetched torrents. |
-| `PREFETCH_TTL_MS`     | `120000`                         | Unused prefetched torrents are removed after this delay. |
-| `PREFETCH_MAX`        | `6`                              | Most prefetched torrents kept at once. |
-| `EXTRA_TRACKERS`      | (empty)                          | Extra announce URLs, comma-separated. |
+All settings are environment variables. Limits changed in the TUI are saved and override these.
 
-## Notes
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `7000` | HTTP port. |
+| `HTTPS_PORT` | `7443` | HTTPS port, used only when a certificate exists. |
+| `TLS_CERT`, `TLS_KEY` | `certs/cert.pem`, `certs/key.pem` | Certificate and key for HTTPS. |
+| `PUBLIC_URL` | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL for install and stream links. |
+| `STREAM_URL` | `PUBLIC_URL` if set, else `http://127.0.0.1:$PORT` | Base URL for `/play` stream links only. |
+| `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
+| `SCRAPERS` | `yts,tpb,eztv,nyaa,1337x` | Indexes to search, comma-separated. |
+| `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
+| `STATE_FILE` | `state/state.json` | Saved users and limits. The admin socket and background log live next to it. |
+| `ADMIN_SOCKET` | `state/admin.sock` | Unix socket between the TUI and the server. |
+| `DOWNLOAD_PATH` | `$TMPDIR/stremio-webtorrent` | Torrent cache. |
+| `MAX_ACTIVE_TORRENTS` | `5` | Torrents on the server. |
+| `MAX_TORRENTS_PER_USER` | `2` | Torrents one user streams at once. |
+| `MAX_DISK_GB` | unlimited | Disk budget for all torrent data. |
+| `MAX_DISK_PER_STREAM_MB` | unlimited, minimum `128` | Disk budget per torrent. |
+| `READAHEAD_MB` | `256` | Download ahead of the playback position. |
+| `TORRENT_IDLE_MS` | `120000` | Delay before an unused torrent is removed. |
+| `PREFETCH_COUNT` | `2` | Top results prefetched per stream list; `0` turns prefetch off. |
+| `PREFETCH_HEAD_MB`, `PREFETCH_TAIL_MB` | `8`, `4` | Start and end of the file prefetched. |
+| `PREFETCH_TTL_MS` | `120000` | Unused prefetched torrents are removed after this. |
+| `PREFETCH_MAX` | `6` | Most prefetched torrents kept at once. |
+| `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers and DHT. |
+| `MAX_CONNS` | `55` | Peer connections per torrent. |
+| `EXTRA_TRACKERS` | empty | Extra tracker announce URLs, comma-separated. |
+| `MAX_RESULTS` | `30` | Torrents returned per stream list. |
+| `SCRAPER_TIMEOUT_MS` | `10000` | Timeout per index. |
+| `CACHE_TTL_MS` | `1800000` | How long search results are cached. |
+| `USER_AGENT` | a desktop Chrome user agent | User agent for requests to the indexes. |
 
-- Many corporate and mobile networks block outbound UDP. With UDP blocked, DHT and UDP trackers
-  do not work. The default tracker list starts with HTTP trackers, so peer discovery still works.
-- In `native` mode, season packs are omitted. Without a `fileIdx`, Stremio's engine plays the
-  largest file, which is often the wrong episode.
-- `notWebReady` is set on HTTP streams, so Stremio Web transcodes MKV/HEVC through its streaming
-  server. Desktop and Android apps play the streams directly.
+## HTTP endpoints
 
-## Legal
+Under `/<token>` when users exist.
 
-This software only indexes public torrent metadata and streams peer-to-peer data. You are
-responsible for complying with copyright law where you live. Use it only for content you have
-the right to access.
+| Endpoint | Description |
+|---|---|
+| `GET /` | Install page. |
+| `GET /install` | Redirect to the `stremio://` install link. |
+| `GET /manifest.json` | Stremio manifest. |
+| `GET /configure` | Settings page. |
+| `GET /stream/:type/:id.json` | Stremio stream list. |
+| `GET /play/:infoHash/:fileIdx` | Video over HTTP with Range support; `fileIdx` is a number or `auto`. |
+| `GET /dashboard` | Web dashboard. |
+| `GET /status` | Dashboard data as JSON (torrents, `connections`, `viewers`, `watchers`, disk). |
+| `DELETE /api/torrents/:infoHash` | Stop a torrent; `409` if another user is streaming it. |
+| `GET /health` | Always public; for health checks. |
+
+## Troubleshooting
+
+- **"Operation timed out" in Stremio, or slow start.** Usually too few peers. Networks that
+  block outbound UDP (common in offices and on mobile) disable DHT and UDP trackers, leaving a
+  handful of peers. Pick a prefetched result (top two), retry after a few seconds, or run the
+  server on a network with UDP. Each request is logged as a `[play]` line with its time to first
+  byte, which shows where it waits.
+- **TLS error when clicking Install.** `stremio://` links need HTTPS; see
+  [One-click install](#one-click-install-stremio-links), or paste the `http://` manifest URL.
+- **Stremio cannot connect / connection refused.** The server is not running. Check
+  `state/server.log` for why it stopped.
+- **"Port 7000 is already in use".** Another server is running: `npm stop`, or open it with
+  `npm start dashboard`.
+- **"The dashboard needs an interactive terminal".** Run it in a real terminal, not from a
+  script or a non-interactive shell.
+- **Stream list shows old information.** Stremio caches stream lists for up to 5 minutes;
+  reopen the title later or restart Stremio.
+- **Wrong episode from a season pack.** Pack detection relies on `S01E02`-style file names.
+  Choose a single-episode result.
+
+## Security
+
+- Add users before exposing the server beyond your computer. Without users it is open to anyone
+  who can reach it, and they can stream through your connection.
+- Tokens are secrets: install links and stream links contain them, and `state/state.json`
+  stores them. Do not commit `state/`, `certs/` or `.env` (they are in `.gitignore`).
+- The admin socket gives full control over the server. It is created with owner-only permissions.
+- `npm audit` reports an advisory in the `ip` package used by WebTorrent's tracker client. There
+  is no fixed WebTorrent release yet.
+
+## How it works
+
+1. Stremio asks for streams for an IMDb id, e.g. `tt1234567`, or `tt1234567:1:2` for season 1
+   episode 2.
+2. The addon looks up title, year and runtime on Cinemeta and queries the enabled indexes in
+   parallel. A blocked or broken index only drops its own results.
+3. Results are filtered by title, year and episode, deduplicated by info hash, sorted by peer
+   count, and returned as links to `/play/<infoHash>/auto`.
+4. On `/play`, WebTorrent fetches the torrent metadata, picks the file (matching episode in a
+   pack, else the largest video) and downloads the requested byte range plus the readahead.
+
+### Indexes
+
+| Key | Content | Method |
+|---|---|---|
+| `yts` | Movies | JSON API, by IMDb id |
+| `tpb` | Movies, TV | JSON API |
+| `eztv` | TV | JSON API, by IMDb id |
+| `nyaa` | Anime | RSS feed |
+| `1337x` | Movies, TV | HTML (often blocked by Cloudflare) |
+
+Each index module in `src/scrapers/` lists mirror domains, which change often. To add an index,
+export `{ name, types, search(query) }` from a module and register it in `src/scrapers/index.js`.
+
+## Legal and safety
+
+- **No content here.** This repository contains source code only. It hosts, stores and links to
+  no media and no torrent files. Search results come live from third-party sites that this
+  project does not operate or control, and is not affiliated with.
+- **You are responsible.** Downloading or sharing copyrighted material without permission is
+  illegal in many countries. Use this software only for content you have the right to access,
+  such as public-domain works, Creative Commons releases, or your own files. Disable indexes you
+  do not want with `SCRAPERS` or the Configure page.
+- **BitTorrent uploads.** While a torrent is active, WebTorrent also uploads pieces to other
+  peers, so you distribute what you stream. Peers and trackers see your IP address.
+- **Not affiliated** with Stremio, WebTorrent, or any index listed above. Names are used only to
+  describe what the code connects to.
+- **No warranty.** The software is provided as is.

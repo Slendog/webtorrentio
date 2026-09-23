@@ -1,7 +1,7 @@
 {
-  "name": "stremio-webtorrent-addon",
+  "name": "webtorrentio",
   "version": "1.0.0",
-  "description": "Stremio addon that scrapes torrent sites and streams via WebTorrent",
+  "description": "Stremio addon that searches public torrent indexes and streams results through WebTorrent",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -22,6 +22,14 @@
     "webtorrent": "^3.0.21"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Slendog/webtorrentio.git"
+  },
+  "homepage": "https://github.com/Slendog/webtorrentio#readme",
+  "bugs": {
+    "url": "https://github.com/Slendog/webtorrentio/issues"
   }
 }
