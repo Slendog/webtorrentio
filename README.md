@@ -341,8 +341,18 @@ Under `/<token>` when users exist.
   sites.
 - **The admin socket** gives full control over the server. Only its owner can open it.
 - **`npm stop`** only signals processes that are this addon, never another program on the port.
-- **Known advisory.** `npm audit` reports an advisory in the `ip` package used by WebTorrent's
-  tracker client; no fixed WebTorrent release exists yet.
+- **Known advisory, not exploitable here.** `npm audit` reports 4 "high" findings. They are all
+  one advisory, [GHSA-2p57-rm9w-gvfp](https://github.com/advisories/GHSA-2p57-rm9w-gvfp): the
+  `ip` package's `isPublic()` misclassifies some addresses (SSRF risk). No fixed `ip` version
+  exists. This project never calls it:
+  - the only importer of `ip` is `bittorrent-tracker/lib/server/parse-udp.js` (tracker *server*
+    code, which the addon never runs), and it only calls `ip.toString()`;
+  - nothing in the dependency tree or this code calls `isPublic`, `isPrivate` or `isLoopback`
+    from `ip`, and nothing uses the tracker `Server`;
+  - at runtime, with every `ip` function wrapped, a full session (stream list, prefetch,
+    playback, seek) made zero calls to `ip`.
+
+  Re-check after dependency upgrades (`npm ls ip`, and search `node_modules` for `from 'ip'`).
 - **Reporting.** Please report vulnerabilities privately through GitHub's
   [security advisories](https://github.com/Slendog/webtorrentio/security/advisories/new) rather
   than in public issues.
