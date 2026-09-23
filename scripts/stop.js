@@ -8,7 +8,13 @@ try {
   const state = await adminRequest('GET', '/state?since=999999999')
   await adminRequest('POST', '/shutdown', { by: 'npm stop' })
   console.log(`Stopping server (pid ${state.pid})`)
-  process.exit(0)
+  // Wait until it has cleaned up and exited, so a start right after this does not find it.
+  for (let i = 0; i < 60; i++) {
+    try { process.kill(state.pid, 0) } catch { process.exit(0) }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  console.log(`Server (pid ${state.pid}) is still shutting down after 15 s`)
+  process.exit(1)
 } catch {
   // No admin socket: an older server, or none at all.
 }
