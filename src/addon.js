@@ -3,7 +3,7 @@ import { config } from './config.js'
 import { getMeta } from './meta.js'
 import { formatBytes, parseTags, TRACKERS } from './parse.js'
 import { rememberScraped, rememberStreamContext } from './registry.js'
-import { prefetch } from './torrent.js'
+import { knownFile, prefetch } from './torrent.js'
 import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
 export const manifest = {
@@ -57,6 +57,8 @@ function describe (t) {
 function toStreams (t, query, playBase, mode) {
   const streams = []
   const bingeGroup = `webtorrent-${t.quality}`
+  // Known once the torrent's file list is (running or cached): helps Stremio match subtitles.
+  const hints = knownFile(t.infoHash, query.season, query.episode) || {}
   const title = describe(t)
 
   if (mode === 'webtorrent' || mode === 'both') {
@@ -65,7 +67,7 @@ function toStreams (t, query, playBase, mode) {
       name: label('WebTorrent', t),
       title,
       url: `${playBase}/play/${t.infoHash}/auto${qs}`,
-      behaviorHints: { bingeGroup, notWebReady: true }
+      behaviorHints: { bingeGroup, notWebReady: true, ...hints }
     })
   }
 
@@ -77,7 +79,7 @@ function toStreams (t, query, playBase, mode) {
       title,
       infoHash: t.infoHash,
       sources: [...TRACKERS.map(tr => `tracker:${tr}`), `dht:${t.infoHash}`],
-      behaviorHints: { bingeGroup: `native-${t.quality}` }
+      behaviorHints: { bingeGroup: `native-${t.quality}`, ...hints }
     })
   }
   return streams

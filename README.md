@@ -22,6 +22,7 @@ episode and streams the result over HTTP through a built-in
 - Fast starts: the top results are prefetched, and for all others the player waits (with
   redirects) until data is there instead of timing out.
 - Binge-watching: near the end of an episode, the next one is prepared so it starts at once.
+- Re-opening something watched before starts at once: headers and indexes are kept (up to 500 MB).
 - Docker and docker-compose setup with optional automatic HTTPS (Caddy).
 
 ## Requirements
@@ -149,6 +150,22 @@ The prefetch is kept for `NEXT_EPISODE_TTL_MS` (30 minutes), does not count agai
 dashboards. It is logged as, for example,
 `[next] alice: prefetching S02E01 (1080p, 6eff9eb3) at 94% of S01E08`. `NEXT_EPISODE_AT=0`
 turns it off. Not done in `native` mode.
+
+### Header and index cache
+
+Players read a file's header and often its index at the end before they start. When a torrent
+that was played is removed (idle, eviction, **Remove**, shutdown), the server keeps the first
+`PREFETCH_HEAD_MB` and last `PREFETCH_TAIL_MB` of every played file, plus the torrent's
+metadata, in `state/edge-cache/`. Opening it again, even after a restart, then needs no
+metadata lookup and serves those parts at once (a test: first byte in 0.02 s).
+
+- Capped at `EDGE_CACHE_MB` (500 MB, which is also the maximum); least recently used torrents
+  are dropped first. It is separate from `MAX_DISK_GB`.
+- Restored pieces are checked against the torrent's hashes; a damaged one is downloaded again.
+- The rolling disk cache never deletes these pieces of a played file while it plays, so they
+  are still there to be saved.
+- Stream lists carry Stremio's `filename` and `videoSize` hints for torrents whose file list is
+  known (running or cached), which helps Stremio match subtitles.
 
 ## Disk cache
 
@@ -300,6 +317,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PREFETCH_MAX` | `6` | Most prefetched torrents kept at once. |
 | `NEXT_EPISODE_AT` | `0.9` | Share of an episode after which the next episode is prefetched; `0` turns it off. |
 | `NEXT_EPISODE_TTL_MS` | `1800000` | How long a next-episode prefetch is kept if unused. |
+| `EDGE_CACHE_MB` | `500` (maximum `500`) | Header and index cache of played files; `0` turns it off. |
 | `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
 | `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
 | `MAX_CONNS` | `55` | Peer connections per torrent. |

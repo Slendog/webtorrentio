@@ -96,6 +96,9 @@ export const config = {
   prefetchTtlMs: Number(env.PREFETCH_TTL_MS) || 2 * 60 * 1000,
   prefetchHeadBytes: (env.PREFETCH_HEAD_MB !== undefined ? Number(env.PREFETCH_HEAD_MB) : 8) * 1024 ** 2,
   prefetchTailBytes: (env.PREFETCH_TAIL_MB !== undefined ? Number(env.PREFETCH_TAIL_MB) : 4) * 1024 ** 2,
+  // Persistent cache of the header and index pieces of played files (see edge-cache.js).
+  // Capped at 500 MB; 0 turns it off.
+  edgeCacheBytes: Math.min(env.EDGE_CACHE_MB !== undefined ? Number(env.EDGE_CACHE_MB) : 500, 500) * 1024 ** 2,
   // Port for incoming BitTorrent connections. 0 picks a random port.
   torrentPort: Number(env.TORRENT_PORT) || 0,
   // DHT uses its own UDP port. It must differ from TORRENT_PORT, where uTP (BitTorrent over

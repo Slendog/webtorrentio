@@ -166,7 +166,8 @@ export const dashboardHtml = `<!doctype html>
       document.getElementById('down').textContent = speed(data.downloadSpeed)
       document.getElementById('up').textContent = speed(data.uploadSpeed)
       document.getElementById('count').textContent = data.usedSlots + ' / ' + data.maxActiveTorrents + (data.torrents.length > data.usedSlots ? ' (+' + (data.torrents.length - data.usedSlots) + ' prefetched)' : '')
-      document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' / ' + bytes(data.disk.limit) : '')
+      document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' / ' + bytes(data.disk.limit) : '') +
+        (data.edgeCache && data.edgeCache.limit ? ' · edge cache ' + bytes(data.edgeCache.bytes) + ' / ' + bytes(data.edgeCache.limit) : '')
       document.getElementById('limits').textContent = 'Limit: ' + data.maxTorrentsPerUser + ' torrents per user'
 
       const alive = new Set()

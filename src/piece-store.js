@@ -15,6 +15,15 @@ export class PieceStore {
     this.bytes = 0
     this.closed = false
     fs.mkdirSync(this.dir, { recursive: true })
+    // Pieces already in the folder (restored from the edge cache). WebTorrent hashes them
+    // before use, so a damaged one is downloaded again.
+    for (const f of fs.readdirSync(this.dir)) {
+      const m = f.match(/^(\d+)\.piece$/)
+      if (!m) continue
+      const size = fs.statSync(path.join(this.dir, f)).size
+      this.pieces.set(Number(m[1]), size)
+      this.bytes += size
+    }
     if (this.infoHash) PieceStore.byInfoHash.set(this.infoHash, this)
   }
 
@@ -60,7 +69,8 @@ export class PieceStore {
 
   close (cb = () => {}) {
     this.closed = true
-    if (this.infoHash) PieceStore.byInfoHash.delete(this.infoHash)
+    // A newer store for the same torrent may already be registered; only remove our own entry.
+    if (this.infoHash && PieceStore.byInfoHash.get(this.infoHash) === this) PieceStore.byInfoHash.delete(this.infoHash)
     queueMicrotask(() => cb(null))
   }
 

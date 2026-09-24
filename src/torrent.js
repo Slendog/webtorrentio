@@ -3,6 +3,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import WebTorrent from 'webtorrent'
 import { config } from './config.js'
+import { edgeCacheFiles, edgeCacheRestore, edgeCacheSave, edgeCacheUsage, edgePieces } from './edge-cache.js'
 import { magnetUri, pickFile } from './parse.js'
 import { installPeerGuard, isGuarded } from './peer-guard.js'
 import { PieceStore } from './piece-store.js'
@@ -90,7 +91,19 @@ function scheduleIdle (entry) {
 }
 
 // One folder per info hash: torrents often share a name, and WebTorrent names folders after it.
-const torrentDir = infoHash => path.join(config.downloadPath, infoHash)
+// A new folder every time a torrent is added: removing a torrent deletes its folder in the
+// background, which must not hit a newer copy of the same torrent (restored from the edge cache).
+let addSeq = 0
+const newTorrentDir = infoHash => path.join(config.downloadPath, `${infoHash}-${Date.now().toString(36)}${++addSeq}`)
+
+// Keep the header and index pieces of played files for next time (see edge-cache.js).
+function saveEdges (entry) {
+  try {
+    edgeCacheSave(entry.torrent, PieceStore.byInfoHash.get(entry.infoHash), entry.played)
+  } catch (err) {
+    console.warn(`[edge-cache] cannot save ${entry.infoHash.slice(0, 8)}: ${err.message}`)
+  }
+}
 
 // Limits changed at runtime: restart idle timers (new timeout) and resize readahead windows.
 onChange(() => {
@@ -106,9 +119,10 @@ function removeTorrent (infoHash) {
   clearTimeout(entry.idleTimer)
   entries.delete(infoHash)
   console.log(`[webtorrent] removing ${infoHash}`)
+  saveEdges(entry)
   client.remove(infoHash, { destroyStore: true }, err => {
     if (err) console.warn(`[webtorrent] remove ${infoHash}: ${err.message}`)
-    fs.rm(torrentDir(infoHash), { recursive: true, force: true }, () => {})
+    fs.rm(entry.dir, { recursive: true, force: true }, () => {})
   })
 }
 
@@ -165,8 +179,13 @@ function evictPieces (list, over) {
     const store = PieceStore.byInfoHash.get(entry.infoHash)
     if (!store || !entry.torrent.ready || entry.torrent.destroyed) continue
     const windows = protectedWindows(entry, effectiveReadahead(entry))
+    // Header and index pieces of played files stay, so the edge cache can keep them.
+    const edges = new Set()
+    if (config.edgeCacheBytes) {
+      for (const f of entry.torrent.files) if (entry.played.has(f.path)) for (const i of edgePieces(f, entry.torrent.pieceLength)) edges.add(i)
+    }
     for (const [index, size] of store.pieces) {
-      if (windows.some(w => index >= w.from && index <= w.to)) continue
+      if (edges.has(index) || windows.some(w => index >= w.from && index <= w.to)) continue
       // Distance to the nearest viewer; pieces behind a viewer count double, so they go first.
       const distance = windows.length
         ? Math.min(...windows.map(w => index < w.at ? (w.at - index) * 2 : index - w.at))
@@ -257,8 +276,12 @@ function checkLimits (infoHash, user) {
 function getTorrent (infoHash) {
   let entry = entries.get(infoHash)
   if (!entry) {
-    const torrent = client.add(magnetUri(infoHash), {
-      path: torrentDir(infoHash),
+    const dir = newTorrentDir(infoHash)
+    // From the edge cache: metadata without asking peers, and header/index pieces on disk.
+    const cachedTorrent = edgeCacheRestore(infoHash, dir)
+    if (cachedTorrent) console.log(`[edge-cache] ${infoHash.slice(0, 8)} restored: metadata and header/index pieces from cache`)
+    const torrent = client.add(cachedTorrent || magnetUri(infoHash), {
+      path: dir,
       store: PieceStore,
       destroyStoreOnDestroy: true,
       // Download nothing until a file stream asks for pieces.
@@ -267,6 +290,8 @@ function getTorrent (infoHash) {
     entry = {
       infoHash,
       torrent,
+      dir,
+      played: new Set(),
       connections: 0,
       files: new Map(),
       users: new Map(),
@@ -402,6 +427,7 @@ class SliceStream extends Readable {
 
 export function openStream (entry, file, start, end, user, { season, episode } = {}) {
   const reader = { file, user, season, episode, pos: start, sliceEnd: start, bytesRead: 0, openedAt: Date.now() }
+  entry.played.add(file.path)
   entry.readers.add(reader)
   const stream = new SliceStream(entry, reader, start, end)
 
@@ -630,12 +656,24 @@ export function status (user) {
     usedSlots: usedSlots(),
     maxTorrentsPerUser: config.maxTorrentsPerUser,
     disk: { used: diskUsage(), limit: config.maxDiskBytes || null, perStreamLimit: config.maxDiskPerStreamBytes || null },
+    edgeCache: edgeCacheUsage(),
     idleTimeoutMs: config.idleTimeoutMs,
     torrents: [...entries.values()].map(torrentStats)
   }
 }
 
 export async function shutdown () {
+  for (const entry of entries.values()) saveEdges(entry)
   await new Promise(resolve => client.destroy(() => resolve()))
-  for (const infoHash of entries.keys()) fs.rmSync(torrentDir(infoHash), { recursive: true, force: true })
+  for (const entry of entries.values()) fs.rmSync(entry.dir, { recursive: true, force: true })
+}
+
+// Name and size of the file that would play, when the torrent's file list is known (running
+// or in the edge cache). Used for Stremio's filename/videoSize stream hints.
+export function knownFile (infoHash, season, episode) {
+  const running = entries.get(infoHash)?.torrent
+  const files = running?.ready ? running.files.map(f => ({ name: f.name, path: f.path, length: f.length })) : edgeCacheFiles(infoHash)
+  if (!files) return null
+  const file = files[pickFile(files, season, episode)]
+  return file ? { filename: file.name, videoSize: file.length } : null
 }

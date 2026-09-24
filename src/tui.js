@@ -136,7 +136,8 @@ export async function startTui () {
     const lines = []
 
     // Header
-    const disk = st.disk.limit ? `${bytes(st.disk.used)} / ${bytes(st.disk.limit)}` : `${bytes(st.disk.used)} (no limit)`
+    const disk = (st.disk.limit ? `${bytes(st.disk.used)} / ${bytes(st.disk.limit)}` : `${bytes(st.disk.used)} (no limit)`) +
+      (st.edgeCache?.limit ? `  edge cache ${bytes(st.edgeCache.bytes)} / ${bytes(st.edgeCache.limit)}` : '')
     lines.push(c.inverse(fit(` WebTorrent Scraper  ${c.green('↓ ' + speed(st.downloadSpeed))}  ${c.blue('↑ ' + speed(st.uploadSpeed))}  ` +
       `disk ${disk}  torrents ${st.usedSlots}/${st.maxActiveTorrents}${st.torrents.length > st.usedSlots ? ` (+${st.torrents.length - st.usedSlots} prefetched)` : ''}  ${data.publicUrl}  pid ${data.pid}, up ${duration(data.uptime)}`, width)))
     lines.push('')
