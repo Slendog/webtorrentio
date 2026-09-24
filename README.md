@@ -85,7 +85,12 @@ npm run certs            # writes certs/cert.pem and certs/key.pem
 npm start
 ```
 
-With `certs/` present, the server also listens on HTTPS port 7443. Open
+`HTTPS` switches the built-in HTTPS: `auto` (default) uses HTTPS when a working certificate
+exists, `on` requires one and refuses to start without it, `off` never uses HTTPS (for example
+behind a proxy that does HTTPS). A broken certificate in `auto` mode is logged and the server
+runs on HTTP only. The startup log shows the result, e.g. `HTTPS (HTTPS=auto): on, port 7443`.
+
+With a working certificate, the server also listens on HTTPS port 7443. Open
 `https://127.0.0.1:7443/` and click **Install in Stremio**. Stream links stay on plain HTTP,
 because Stremio's player may not trust the local certificate.
 
@@ -311,7 +316,8 @@ needs the certificate files.
   requesting a new one (repeated requests can hit Let's Encrypt rate limits).
 - Renewed certificates are served at once, without a restart (tested with Caddy's local CA and
   a 90 s lifetime: six renewals in two minutes, each served immediately). The addon's port 7000 is not published in
-this setup, and Caddy receives only `DOMAIN` and `ACME_EMAIL`, not the addon's tokens. Use
+this setup, the addon runs with `HTTPS=off`, and Caddy receives only `DOMAIN` and `ACME_EMAIL`,
+not the addon's tokens. Use
 `-f docker-compose.https.yml` with every `docker compose` command for this setup.
 
 **Both setups:**
@@ -339,7 +345,8 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PORT` | `7000` | HTTP port. |
 | `HOST` | `127.0.0.1`, or `0.0.0.0` when `PUBLIC_URL` is not a loopback address; `0.0.0.0` in Docker | Interface to listen on. |
 | `ALLOWED_HOSTS` | empty | Extra host names accepted in the `Host` header (IP addresses, `localhost`, and the hosts of `PUBLIC_URL`/`STREAM_URL` always are). |
-| `HTTPS_PORT` | `7443` | HTTPS port, used only when a certificate exists. |
+| `HTTPS` | `auto` | Built-in HTTPS: `auto` (when a working certificate exists), `on` (required), `off`. |
+| `HTTPS_PORT` | `7443` | HTTPS port, used when HTTPS is on. |
 | `TLS_CERT`, `TLS_KEY` | `certs/cert.pem`, `certs/key.pem` | Certificate and key for HTTPS. |
 | `PUBLIC_URL` | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL for install and stream links. |
 | `STREAM_URL` | `PUBLIC_URL` if set, else `http://127.0.0.1:$PORT` | Base URL for `/play` stream links only. |

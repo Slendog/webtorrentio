@@ -1,14 +1,36 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createSecureContext } from 'node:tls'
 import { fatal, inDocker } from './runtime.js'
 
 const env = process.env
 
-// HTTPS is enabled when a cert/key pair exists. `npm run certs` creates one in ./certs with mkcert.
+// Built-in HTTPS, set with HTTPS=auto|on|off:
+//   auto  (default) HTTPS when a working certificate/key pair exists, else HTTP only
+//   on    HTTPS required; a missing or broken certificate stops the server
+//   off   HTTP only, even when certificates exist (e.g. behind a proxy that does HTTPS)
+// `npm run certs` creates a local pair in ./certs with mkcert; TLS_CERT/TLS_KEY point elsewhere.
 const certFile = env.TLS_CERT || path.resolve('certs/cert.pem')
 const keyFile = env.TLS_KEY || path.resolve('certs/key.pem')
-const tls = fs.existsSync(certFile) && fs.existsSync(keyFile) ? { cert: certFile, key: keyFile } : null
+const httpsMode = (env.HTTPS || 'auto').trim().toLowerCase()
+if (!['auto', 'on', 'off'].includes(httpsMode)) fatal(`HTTPS must be auto, on or off, not "${env.HTTPS}".`)
+
+let tls = null
+if (httpsMode !== 'off') {
+  if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+    try {
+      createSecureContext({ cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) })
+      tls = { cert: certFile, key: keyFile }
+    } catch (err) {
+      if (httpsMode === 'on') fatal(`HTTPS=on, but the certificate does not load (${err.message}): ${certFile}, ${keyFile}`)
+      console.warn(`HTTPS disabled: the certificate does not load (${err.message}): ${certFile}, ${keyFile}`)
+    }
+  } else if (httpsMode === 'on') {
+    fatal(`HTTPS=on, but there is no certificate at ${certFile} and ${keyFile}. ` +
+      'Create one (npm run certs) or set TLS_CERT and TLS_KEY.')
+  }
+}
 
 // ACCESS_TOKENS="alice:token1,bob:token2". A bare token gets the name "user1", "user2", ...
 // With no tokens, the addon is open to anyone who can reach it.
@@ -39,6 +61,7 @@ export const config = {
   port,
   httpsPort,
   tls,
+  httpsMode,
   accessTokens,
   // Network interface to listen on. Loopback by default, so the server is not reachable from
   // other machines until you choose to: HOST=0.0.0.0, or a PUBLIC_URL on another address.

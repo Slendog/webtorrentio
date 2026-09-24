@@ -13,6 +13,9 @@ services:
     image: webtorrentio:latest
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Caddy does HTTPS; the addon speaks plain HTTP on the internal network only.
+      HTTPS: "off"
     # Time to finish streams and save the header/index cache after SIGTERM.
     stop_grace_period: 30s
     expose:

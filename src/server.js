@@ -339,6 +339,7 @@ function startupSummary () {
   if (!users.length && !['127.0.0.1', '::1', 'localhost'].includes(config.host)) {
     lines.push(`WARNING: listening on ${config.host} without users: other machines can use this server. Add a user.`)
   }
+  lines.push(`HTTPS (HTTPS=${config.httpsMode}): ${config.tls ? `on, port ${config.httpsPort}` : 'off'}`)
   if (!config.publicUrl.startsWith('https://')) {
     lines.push('No HTTPS: stremio:// install links fail with a TLS error. Paste the manifest URL into Stremio instead.')
   }
