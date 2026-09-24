@@ -1,6 +1,5 @@
 // Must be the first import: it starts collecting log lines for the dashboard.
 import { oneLine } from './logbuffer.js'
-import fs from 'node:fs'
 import https from 'node:https'
 import express from 'express'
 import { manifest, parseUserConfig, STREAM_MODES, streamResponse } from './addon.js'
@@ -8,6 +7,7 @@ import { config } from './config.js'
 import { dashboardHtml } from './dashboard.js'
 import { configurePage, installPage, lockedPage } from './pages.js'
 import { startAdmin } from './admin.js'
+import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
@@ -306,8 +306,9 @@ app.use((req, res, next) => {
 
 const servers = [app.listen(config.port, config.host, () => console.log(`HTTP on ${config.host}:${config.port}`))]
 if (config.tls) {
-  const tlsOpts = { cert: fs.readFileSync(config.tls.cert), key: fs.readFileSync(config.tls.key) }
-  servers.push(https.createServer(tlsOpts, app).listen(config.httpsPort, config.host, () => console.log(`HTTPS on ${config.host}:${config.httpsPort}`)))
+  const httpsServer = https.createServer(loadPair(config.tls), app)
+  servers.push(httpsServer.listen(config.httpsPort, config.host, () => console.log(`HTTPS on ${config.host}:${config.httpsPort}`)))
+  watchCertificate(httpsServer, config.tls)
 }
 
 for (const server of servers) {

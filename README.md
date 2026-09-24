@@ -89,6 +89,16 @@ With `certs/` present, the server also listens on HTTPS port 7443. Open
 `https://127.0.0.1:7443/` and click **Install in Stremio**. Stream links stay on plain HTTP,
 because Stremio's player may not trust the local certificate.
 
+The server watches the certificate and key files (`TLS_CERT`, `TLS_KEY`) and switches to a
+replaced certificate within about 12 seconds, without a restart; `kill -HUP <pid>` reloads at
+once. A pair that does not load (half written, key and certificate not matching) is ignored and
+the old certificate stays in use, logged as `[tls] new certificate files do not load`.
+
+With your own certificate manager (for example certbot) instead of Caddy, mount its output into
+the addon container read-only and point `TLS_CERT`/`TLS_KEY` at it, e.g.
+`/etc/letsencrypt/live/<domain>/fullchain.pem` and `privkey.pem` (symlinks are followed, so
+renewals are picked up), and publish `HTTPS_PORT` (7443).
+
 ### Other devices (TV, phone)
 
 The server listens only on this computer (`127.0.0.1`) unless told otherwise. Set `PUBLIC_URL`
@@ -291,8 +301,16 @@ docker compose exec addon node src/index.js dashboard  # TUI; press t for instal
 3. `docker compose -f docker-compose.https.yml up -d --build`
 
 Caddy answers the Let's Encrypt challenge on ports 80/443, redirects HTTP to HTTPS and renews
-certificates before they expire. Certificates are kept in the `caddy-data` volume; keep it, or
-repeated re-issuing can hit Let's Encrypt rate limits. The addon's port 7000 is not published in
+certificates before they expire. Caddy is also the HTTPS endpoint: it serves the certificate
+itself and talks plain HTTP to the addon on the internal network, so the addon container never
+needs the certificate files.
+
+- Certificates live in the `caddy-data` volume, at
+  `/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/<DOMAIN>/<DOMAIN>.crt` and
+  `.key`. Keep the volume: a re-created container reuses the stored certificate instead of
+  requesting a new one (repeated requests can hit Let's Encrypt rate limits).
+- Renewed certificates are served at once, without a restart (tested with Caddy's local CA and
+  a 90 s lifetime: six renewals in two minutes, each served immediately). The addon's port 7000 is not published in
 this setup, and Caddy receives only `DOMAIN` and `ACME_EMAIL`, not the addon's tokens. Use
 `-f docker-compose.https.yml` with every `docker compose` command for this setup.
 
