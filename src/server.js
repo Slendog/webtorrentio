@@ -8,6 +8,7 @@ import { config } from './config.js'
 import { dashboardHtml } from './dashboard.js'
 import { configurePage, installPage, lockedPage } from './pages.js'
 import { startAdmin } from './admin.js'
+import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
@@ -312,8 +313,7 @@ if (config.tls) {
 for (const server of servers) {
   server.on('error', err => {
     if (err.code !== 'EADDRINUSE') throw err
-    console.error(`Port ${err.port} is already in use. Another addon server is probably running: run \`npm stop\` first.`)
-    process.exit(1)
+    fatal(`Port ${err.port} is already in use. Another addon server is probably running: run \`${commands.stop}\` first.`)
   })
 }
 
@@ -330,7 +330,7 @@ function startupSummary () {
     lines.push(`Access tokens enabled for ${users.length} user(s). Install pages:`)
     // Install links contain tokens: show them in a terminal, never in log files or docker logs.
     if (process.stdout.isTTY) for (const { user, token } of users) lines.push(`  ${user}: ${config.publicUrl}/${token}/`)
-    else lines.push(`  ${users.map(u => u.user).join(', ')} (links: npm start dashboard, then press t)`)
+    else lines.push(`  ${users.map(u => u.user).join(', ')} (links: ${commands.dashboard}, then press t)`)
   } else {
     lines.push(`Install page: ${config.publicUrl}/`, `Dashboard: ${config.publicUrl}/dashboard`,
       'WARNING: no users. Anyone who can reach this server can use it.')
@@ -367,4 +367,4 @@ console.log(`Server starting (pid ${process.pid})`)
 for (const line of startupSummary()) console.log(line)
 await startAdmin({ stop })
 startNextEpisodePrefetch()
-console.log('Dashboard: npm start dashboard')
+console.log(`Dashboard: ${commands.dashboard}`)

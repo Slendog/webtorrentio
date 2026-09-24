@@ -265,22 +265,52 @@ server defaults apply.
 
 ## Docker (Linux server)
 
+Two compose files:
+
+| File | Use |
+|---|---|
+| `docker-compose.yml` | The addon alone, plain HTTP on port 7000 (home network, or behind your own proxy). |
+| `docker-compose.https.yml` | The addon behind [Caddy](https://caddyserver.com), which obtains and renews **Let's Encrypt** certificates by itself. Needed for one-click install from other devices and for Stremio Web. |
+
+**Plain HTTP:**
+
 ```sh
 cp .env.example .env
 docker compose run --rm addon node scripts/token.js    # once per user, paste into ACCESS_TOKENS
-# edit .env: PUBLIC_URL, ACCESS_TOKENS, limits
+# edit .env: PUBLIC_URL=http://<server-ip>:7000, ACCESS_TOKENS, SCRAPERS, limits
 docker compose up -d --build
-docker compose exec addon node src/index.js dashboard  # TUI; press t for install links
+docker compose exec addon node src/index.js dashboard  # TUI; press t for install links, b to leave
 ```
 
-Open ports 7000/tcp (addon), 6881/tcp+udp (BitTorrent peers, uTP) and 6882/udp (DHT). Torrent data lives in the
-`torrent-data` volume, users and saved limits in `addon-state`.
+**HTTPS with Let's Encrypt:**
 
-**HTTPS with a domain** (needed for one-click install from other devices and for Stremio Web):
-point a DNS record at the server, open ports 80 and 443, set `DOMAIN=addon.example.com` and
-`PUBLIC_URL=https://addon.example.com` in `.env`, then run
-`docker compose --profile https up -d --build`. The included [Caddy](https://caddyserver.com)
-proxy gets a Let's Encrypt certificate automatically; port 7000 can then be closed to the outside.
+1. Point a DNS record for your domain at the server; open ports 80 and 443 (TCP, and UDP 443
+   for HTTP/3).
+2. In `.env`: `DOMAIN=addon.example.com`, `PUBLIC_URL=https://addon.example.com`, and optionally
+   `ACME_EMAIL=you@example.com` for expiry notices.
+3. `docker compose -f docker-compose.https.yml up -d --build`
+
+Caddy answers the Let's Encrypt challenge on ports 80/443, redirects HTTP to HTTPS and renews
+certificates before they expire. Certificates are kept in the `caddy-data` volume; keep it, or
+repeated re-issuing can hit Let's Encrypt rate limits. The addon's port 7000 is not published in
+this setup, and Caddy receives only `DOMAIN` and `ACME_EMAIL`, not the addon's tokens. Use
+`-f docker-compose.https.yml` with every `docker compose` command for this setup.
+
+**Both setups:**
+
+- Open 6881/tcp+udp (BitTorrent peers, uTP) and 6882/udp (DHT) in the firewall.
+- Volumes: `torrent-data` (temporary torrent data), `addon-state` (users, saved limits,
+  header/index cache, admin socket).
+- The image builds native modules for the server's CPU (x64 and arm64), so uTP works on both.
+- `docker compose stop` gives the addon 30 s to finish and save its header/index cache. Logs
+  rotate at 10 MB (3 files).
+- A configuration error (for example the placeholder tokens from `.env.example`) is logged,
+  then the container waits 30 s before exiting, so the restart policy does not flood the log.
+- Local peer discovery does not reach into a container network. On Linux,
+  `network_mode: host` for the addon service lets it find peers on your LAN (then remove its
+  `ports:` section).
+- Podman: build with `podman build --format docker`; the default OCI format drops the health
+  check.
 
 ## Configuration
 

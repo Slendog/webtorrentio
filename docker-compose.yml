@@ -1,9 +1,17 @@
+# Addon over plain HTTP on port 7000.
+# For HTTPS with automatic Let's Encrypt certificates use docker-compose.https.yml instead.
+#
+#   cp .env.example .env    # then edit it
+#   docker compose up -d --build
+
 services:
   addon:
     build: .
-    image: stremio-webtorrent-addon:latest
+    image: webtorrentio:latest
     restart: unless-stopped
     env_file: .env
+    # Time to finish streams and save the header/index cache after SIGTERM.
+    stop_grace_period: 30s
     ports:
       - "7000:7000"
       - "6881:6881/tcp"
@@ -11,27 +19,14 @@ services:
       - "6882:6882/udp"
     volumes:
       - torrent-data:/data
-      # Users and limits changed in the TUI dashboard.
+      # Users and limits saved by the TUI dashboard, header/index cache, admin socket.
       - addon-state:/app/state
-
-  # Optional HTTPS in front of the addon, with an automatic Let's Encrypt certificate.
-  # Needs a domain pointing at this server and ports 80/443 open.
-  # Start with: docker compose --profile https up -d
-  caddy:
-    image: caddy:2
-    profiles: ["https"]
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-    depends_on:
-      - addon
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   torrent-data:
   addon-state:
-  caddy-data:

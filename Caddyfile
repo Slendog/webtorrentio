@@ -1,3 +1,18 @@
+# Caddy obtains a Let's Encrypt certificate for {$DOMAIN} on first start (HTTP-01 / TLS-ALPN
+# challenge on ports 80/443) and renews it automatically. HTTP is redirected to HTTPS.
+{
+	# "email <ACME_EMAIL>" when ACME_EMAIL is set in .env (Let's Encrypt expiry notices), else
+	# nothing: Let's Encrypt does not require an email address.
+	{$CADDY_EMAIL_OPTION}
+}
+
 {$DOMAIN} {
-	reverse_proxy addon:7000
+	reverse_proxy addon:7000 {
+		# Video streams: pass data through at once and do not time out long responses.
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
 }

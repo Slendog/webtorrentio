@@ -1,5 +1,6 @@
 import readline from 'node:readline'
 import { adminRequest } from './client.js'
+import { commands } from './runtime.js'
 
 // Full-screen terminal dashboard: live torrents, users, limits and log, plus keys to add or
 // remove users and change limits while the server runs. It is a client of the server's admin
@@ -296,7 +297,7 @@ export async function startTui () {
     leaving = true
     restore()
     if (reason) console.log(reason)
-    if (!stopped && !reason) console.log('Dashboard closed; the server keeps running. Reopen: npm start dashboard   Stop: npm stop')
+    if (!stopped && !reason) console.log(`Dashboard closed; the server keeps running. Reopen: ${commands.dashboard}   Stop: ${commands.stop}`)
     process.exit(0)
   }
 

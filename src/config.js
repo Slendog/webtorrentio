@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fatal, inDocker } from './runtime.js'
 
 const env = process.env
 
@@ -19,8 +20,8 @@ const accessTokens = (env.ACCESS_TOKENS || '').split(',').map(s => s.trim()).fil
 
 const weak = accessTokens.filter(t => t.token.length < 16 || /change-me/i.test(t.token))
 if (weak.length) {
-  console.error(`ACCESS_TOKENS: tokens for ${weak.map(t => t.user).join(', ')} are too weak. Use 16+ random characters (npm run token).`)
-  process.exit(1)
+  fatal(`ACCESS_TOKENS: tokens for ${weak.map(t => t.user).join(', ')} are too weak. Use 16+ random characters ` +
+    `(${inDocker ? 'docker compose run --rm addon node scripts/token.js' : 'npm run token'}).`)
 }
 
 const port = Number(env.PORT) || 7000
@@ -31,8 +32,7 @@ const httpsPort = Number(env.HTTPS_PORT) || 7443
 
 const MIN_STREAM_MB = 128
 if (env.MAX_DISK_PER_STREAM_MB && Number(env.MAX_DISK_PER_STREAM_MB) < MIN_STREAM_MB) {
-  console.error(`MAX_DISK_PER_STREAM_MB must be at least ${MIN_STREAM_MB}.`)
-  process.exit(1)
+  fatal(`MAX_DISK_PER_STREAM_MB must be at least ${MIN_STREAM_MB}.`)
 }
 
 export const config = {

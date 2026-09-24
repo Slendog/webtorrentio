@@ -9,6 +9,7 @@ import { installPeerGuard, isGuarded } from './peer-guard.js'
 import { PieceStore } from './piece-store.js'
 import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
+import { fatal } from './runtime.js'
 import { onChange } from './settings.js'
 
 const READY_TIMEOUT_MS = 60_000
@@ -24,8 +25,7 @@ const client = new WebTorrent({
 // use). A server without a client can only fail later, so stop now with the reason.
 client.on('error', err => {
   const hint = err.code === 'EADDRINUSE' ? ' Another program uses the port: change TORRENT_PORT / DHT_PORT, or stop the other program.' : ''
-  console.error(`[webtorrent] fatal: ${err.message || err}.${hint} Stopping.`)
-  process.exit(1)
+  fatal(`[webtorrent] fatal: ${err.message || err}.${hint} Stopping.`)
 })
 let unguardedWarned = false
 client.on('torrent', torrent => torrent.on('wire', wire => {

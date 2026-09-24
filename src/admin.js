@@ -8,6 +8,7 @@ import { logsSince } from './logbuffer.js'
 import { socketPath } from './paths.js'
 import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, setLimit, statePath } from './settings.js'
 import { forceRemove, status } from './torrent.js'
+import { commands, fatal } from './runtime.js'
 
 // Admin API for the TUI dashboard, on a Unix socket readable only by the owner. It never
 // listens on a network port, so it is reachable only from this machine (or inside the container).
@@ -75,8 +76,7 @@ async function clearStaleSocket () {
     sock.once('error', () => resolve(false))
   })
   if (alive) {
-    console.error(`Another server is already running (admin socket ${socketPath}). Use \`npm start dashboard\` to open it.`)
-    process.exit(1)
+    fatal(`Another server is already running (admin socket ${socketPath}). Use \`${commands.dashboard}\` to open it.`)
   }
   fs.unlinkSync(socketPath)
 }

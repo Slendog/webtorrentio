@@ -1,0 +1,63 @@
+# Addon behind Caddy, which gets and renews Let's Encrypt certificates for DOMAIN on its own.
+# Needs: a DNS record for DOMAIN pointing at this server, ports 80 and 443 reachable from the
+# internet, and in .env: DOMAIN=addon.example.com and PUBLIC_URL=https://addon.example.com
+#
+#   cp .env.example .env    # then edit it
+#   docker compose -f docker-compose.https.yml up -d --build
+#
+# The addon's port 7000 is not published: all web traffic goes through Caddy.
+
+services:
+  addon:
+    build: .
+    image: webtorrentio:latest
+    restart: unless-stopped
+    env_file: .env
+    # Time to finish streams and save the header/index cache after SIGTERM.
+    stop_grace_period: 30s
+    expose:
+      - "7000"
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+      - "6882:6882/udp"
+    volumes:
+      - torrent-data:/data
+      # Users and limits saved by the TUI dashboard, header/index cache, admin socket.
+      - addon-state:/app/state
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Certificate manager and HTTPS proxy.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - addon
+    # Only what Caddy needs; the addon's tokens stay out of this container.
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      CADDY_EMAIL_OPTION: ${ACME_EMAIL:+email ${ACME_EMAIL}}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account; keep this volume, or Let's Encrypt rate limits can hit.
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  torrent-data:
+  addon-state:
+  caddy-data:
+  caddy-config:

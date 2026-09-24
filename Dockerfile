@@ -1,4 +1,6 @@
-FROM node:22-slim
+# ---- Build stage: installs dependencies with a compiler toolchain available, so native add-ons
+# without a prebuilt binary for this CPU (utp-native on arm64) are compiled from source.
+FROM node:22 AS build
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -6,18 +8,27 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 # Local stand-in for the `ip` package, referenced by "overrides" in package.json.
 COPY vendor ./vendor
-# Install scripts must run: node-datachannel (WebRTC) downloads a prebuilt binary that
-# WebTorrent requires. utp-native is optional; if it has no prebuild for the CPU, it is skipped.
+# Install scripts must run: node-datachannel (WebRTC) downloads a prebuilt binary, utp-native
+# (uTP, BitTorrent over UDP) uses a prebuild or compiles here.
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY src ./src
-COPY scripts ./scripts
+# ---- Runtime stage: slim image without compilers; only the installed modules are copied.
+FROM node:22-slim
 
-ENV PORT=7000 \
+WORKDIR /app
+ENV NODE_ENV=production \
+    WEBTORRENTIO_DOCKER=1 \
+    PORT=7000 \
     HOST=0.0.0.0 \
     TORRENT_PORT=6881 \
     DOWNLOAD_PATH=/data \
     STATE_FILE=/app/state/state.json
+
+COPY --from=build /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY vendor ./vendor
+COPY src ./src
+COPY scripts ./scripts
 
 RUN mkdir -p /data /app/state && chown node:node /data /app/state
 USER node
