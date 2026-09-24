@@ -1,0 +1,30 @@
+# Controller-neutral base. Deploy an overlay instead (k8s/overlays/traefik or nginx), which adds
+# the ingress controller settings; see "Kubernetes" in the README.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: webtorrentio
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: webtorrentio
+    includeSelectors: true
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+# Settings as environment variables (see "Configuration" in the README). A change creates a
+# new ConfigMap name, so the pod restarts with the new values.
+configMapGenerator:
+  - name: webtorrentio-config
+    envs:
+      - config.env
+
+images:
+  - name: webtorrentio
+    newName: ghcr.io/slendog/webtorrentio
+    newTag: latest

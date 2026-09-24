@@ -5,3 +5,6 @@ certs
 .env
 *.log
 state
+k8s
+.github
+docs

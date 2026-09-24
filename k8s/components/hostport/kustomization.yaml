@@ -1,0 +1,21 @@
+# Optional: open the BitTorrent ports (6881 TCP and UDP, 6882 UDP for DHT) on the node the pod
+# runs on, so other peers can connect in. Without it streaming still works, but only through
+# connections the pod opens itself, which usually means fewer peers.
+# The node's firewall must allow these ports, and no other pod on that node may use them.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: Deployment
+      name: webtorrentio
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/ports/1/hostPort
+        value: 6881
+      - op: add
+        path: /spec/template/spec/containers/0/ports/2/hostPort
+        value: 6881
+      - op: add
+        path: /spec/template/spec/containers/0/ports/3/hostPort
+        value: 6882

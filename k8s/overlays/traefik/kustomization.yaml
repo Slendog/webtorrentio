@@ -1,0 +1,38 @@
+# Traefik ingress with Traefik's own Let's Encrypt certificate (a certificate resolver).
+#
+# Your Traefik installation needs a certificate resolver; this overlay expects it to be named
+# "letsencrypt". With the Traefik Helm chart, for example:
+#   certificatesResolvers:
+#     letsencrypt:
+#       acme:
+#         email: you@example.com
+#         storage: /data/acme.json
+#         tlsChallenge: {}
+# (plus persistence for /data, so certificates survive restarts). A different name: change
+# router.tls.certresolver below.
+#
+# Deploy with your own domain: see "Kubernetes" in the README (k8s/local).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/domain
+
+patches:
+  - target:
+      kind: Ingress
+      name: webtorrentio
+    patch: |-
+      - op: add
+        path: /spec/ingressClassName
+        value: traefik
+      - op: add
+        path: /metadata/annotations
+        value:
+          # HTTPS only; plain HTTP requests are not routed to the addon.
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.tls: "true"
+          traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt

@@ -24,6 +24,7 @@ episode and streams the result over HTTP through a built-in
 - Binge-watching: near the end of an episode, the next one is prepared so it starts at once.
 - Re-opening something watched before starts at once: headers and indexes are kept (up to 500 MB).
 - Docker and docker-compose setup with optional automatic HTTPS (Caddy).
+- Kubernetes manifests (Kustomize) with a Traefik ingress and Let's Encrypt.
 
 ## Requirements
 
@@ -31,7 +32,7 @@ episode and streams the result over HTTP through a built-in
 - macOS or Linux. The dashboard's admin connection uses a Unix socket, and `npm stop` uses
   `lsof`. Windows is untested.
 - Outbound UDP helps a lot (DHT and UDP trackers). See [Troubleshooting](#troubleshooting).
-- Optional: Docker with Compose for server installs, [mkcert](https://github.com/FiloSottile/mkcert)
+- Optional: Docker with Compose, or a Kubernetes cluster, for server installs, [mkcert](https://github.com/FiloSottile/mkcert)
   for local HTTPS.
 
 ## Quick start
@@ -335,6 +336,76 @@ not the addon's tokens. Use
   `ports:` section).
 - Podman: build with `podman build --format docker`; the default OCI format drops the health
   check.
+
+## Kubernetes
+
+Plain manifests in `k8s/`, combined with Kustomize (built into `kubectl`, no Helm needed):
+
+| Folder | Contents |
+|---|---|
+| `k8s/base` | Namespace `webtorrentio`, Deployment, Service, two volumes, Ingress, settings (`config.env`). No ingress controller specifics. |
+| `k8s/overlays/traefik` | Traefik ingress, HTTPS with Traefik's own Let's Encrypt certificate. Tested on k3s. |
+| `k8s/components/domain` | Copies `DOMAIN` into the Ingress and `PUBLIC_URL`. |
+| `k8s/components/hostport` | Optional: opens the BitTorrent ports on the node, for incoming peers. |
+| `k8s/local-example` | Starting point for your own deployment. |
+
+The image is `ghcr.io/slendog/webtorrentio` (amd64 and arm64), built by
+`.github/workflows/image.yml` from `main` (`latest`) and from version tags.
+
+**Requirements:** Traefik as the ingress controller, with a certificate resolver named
+`letsencrypt` (for another name, change `router.tls.certresolver` in
+`k8s/overlays/traefik/kustomization.yaml`). With the Traefik Helm chart:
+
+```yaml
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: you@example.com
+      storage: /data/acme.json
+      tlsChallenge: {}
+persistence:
+  enabled: true   # keeps acme.json, so certificates survive a Traefik restart
+```
+
+A DNS record for the domain must point at Traefik, and ports 80/443 must reach it.
+
+**Deploy:**
+
+```sh
+cp -r k8s/local-example k8s/local        # k8s/local is ignored by git
+# edit k8s/local/kustomization.yaml: DOMAIN, optional settings, optional hostport
+kubectl create namespace webtorrentio
+kubectl -n webtorrentio create secret generic webtorrentio-secrets \
+  --from-literal=ACCESS_TOKENS="alice:$(openssl rand -hex 24),bob:$(openssl rand -hex 24)"
+kubectl apply -k k8s/local
+kubectl -n webtorrentio exec -it deploy/webtorrentio -- node src/index.js dashboard   # press t for install links
+```
+
+Settings go into `literals` in your `kustomization.yaml` (any variable from
+[Configuration](#configuration)); `kubectl apply -k k8s/local` again restarts the pod with the
+new values. Token changes in the secret need `kubectl -n webtorrentio rollout restart
+deploy/webtorrentio`. Without the secret the addon is open to everyone who can reach the domain.
+
+Notes:
+
+- **Exactly one pod.** Torrents, connections and limits live in the process memory, so the
+  Deployment has `replicas: 1` and the `Recreate` strategy. Do not scale it up.
+- **Volumes:** `webtorrentio-data` (50 Gi, torrent data; keep `MAX_DISK_GB` below its size) and
+  `webtorrentio-state` (1 Gi: users, saved limits, header/index cache). Both use the cluster's
+  default storage class; `ReadWriteOnce` is enough.
+- **HTTPS:** Traefik terminates HTTPS and talks plain HTTP to the pod (`HTTPS=off`). The Ingress
+  uses only the `websecure` entry point, so plain HTTP requests are not routed to the addon.
+  Traefik passes streams through without buffering, so no timeout settings are needed.
+- **Incoming peers:** an Ingress carries only HTTP. Without `components/hostport` the pod
+  still streams, but only over connections it opens itself. With it, the node's ports 6881
+  (TCP and UDP) and 6882 (UDP) go to the pod; open them in the node's firewall. A LoadBalancer
+  or NodePort Service for those ports works too.
+- **Stop and start:** `kubectl -n webtorrentio scale deploy/webtorrentio --replicas=0` (or `=1`).
+  The pod gets 30 s to close streams and save its header/index cache.
+- The pod runs as the image's `node` user with a read-only root filesystem and no capabilities.
+- **Other ingress controllers:** make an overlay like `k8s/overlays/traefik` that sets
+  `ingressClassName`, your controller's HTTPS annotations, and turns off response buffering
+  and short read timeouts (video responses last as long as the playback).
 
 ## Configuration
 

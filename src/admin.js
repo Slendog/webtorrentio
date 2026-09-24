@@ -18,8 +18,16 @@ const startedAt = Date.now()
 export async function startAdmin ({ stop }) {
   // Owner-only folder: the socket must never be reachable by other local users, not even in
   // the moment between creating it and changing its permissions.
-  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 })
-  fs.chmodSync(path.dirname(socketPath), 0o700)
+  const dir = path.dirname(socketPath)
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  try {
+    fs.chmodSync(dir, 0o700)
+  } catch (err) {
+    // A mounted volume owned by another user (Kubernetes volumes usually are). Only this
+    // process runs in the container, and the socket itself is still created owner-only.
+    if (err.code !== 'EPERM') throw err
+    console.warn(`[admin] cannot restrict ${dir} (not its owner); the admin socket itself is owner-only`)
+  }
   await clearStaleSocket()
 
   const app = express()
@@ -57,10 +65,16 @@ export async function startAdmin ({ stop }) {
   })
 
   const server = http.createServer(app)
-  await new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(socketPath, resolve)
-  })
+  // umask makes the socket owner-only from the moment it exists.
+  const umask = process.umask(0o077)
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(socketPath, resolve)
+    })
+  } finally {
+    process.umask(umask)
+  }
   fs.chmodSync(socketPath, 0o600)
   process.on('exit', () => { try { fs.unlinkSync(socketPath) } catch {} })
   return server

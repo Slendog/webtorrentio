@@ -6,3 +6,4 @@ certs/
 state/
 .claude/settings.local.json
 .DS_Store
+k8s/local/

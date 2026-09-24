@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createSecureContext } from 'node:tls'
-import { fatal, inDocker } from './runtime.js'
+import { commands, fatal } from './runtime.js'
 
 const env = process.env
 
@@ -43,7 +43,7 @@ const accessTokens = (env.ACCESS_TOKENS || '').split(',').map(s => s.trim()).fil
 const weak = accessTokens.filter(t => t.token.length < 16 || /change-me/i.test(t.token))
 if (weak.length) {
   fatal(`ACCESS_TOKENS: tokens for ${weak.map(t => t.user).join(', ')} are too weak. Use 16+ random characters ` +
-    `(${inDocker ? 'docker compose run --rm addon node scripts/token.js' : 'npm run token'}).`)
+    `(${commands.token}).`)
 }
 
 const port = Number(env.PORT) || 7000

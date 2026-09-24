@@ -1,0 +1,21 @@
+# Torrent data (rolling cache, capped by MAX_DISK_GB).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: webtorrentio-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 50Gi
+---
+# Users, limits and the header/index cache (at most 500 MB).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: webtorrentio-state
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

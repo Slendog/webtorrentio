@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webtorrentio
+spec:
+  # Exactly one pod: torrents, connections and limits live in the process memory, and the
+  # volumes attach to one node. Recreate stops the old pod before the new one starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      # Time for a graceful stop (open streams closed, header/index cache saved).
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 1000   # "node" in the image
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: webtorrentio
+          image: webtorrentio
+          envFrom:
+            - configMapRef:
+                name: webtorrentio-config
+            # ACCESS_TOKENS and other secrets. Optional: without it the addon is open to
+            # anyone who can reach the domain. See "Kubernetes" in the README.
+            - secretRef:
+                name: webtorrentio-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 7000
+            - name: peers-tcp
+              containerPort: 6881
+              protocol: TCP
+            - name: peers-utp
+              containerPort: 6881
+              protocol: UDP
+            - name: dht
+              containerPort: 6882
+              protocol: UDP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: state
+              mountPath: /app/state
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: webtorrentio-data
+        - name: state
+          persistentVolumeClaim:
+            claimName: webtorrentio-state
+        - name: tmp
+          emptyDir: {}

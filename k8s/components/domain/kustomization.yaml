@@ -1,0 +1,25 @@
+# Copies DOMAIN from the webtorrentio-config ConfigMap into the Ingress host names and into
+# PUBLIC_URL, so the domain is set in one place. Include it after setting DOMAIN.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: webtorrentio-config
+      fieldPath: data.DOMAIN
+    targets:
+      - select:
+          kind: Ingress
+          name: webtorrentio
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
+      - select:
+          kind: ConfigMap
+          name: webtorrentio-config
+        fieldPaths:
+          - data.PUBLIC_URL
+        options:
+          delimiter: //
+          index: 1

@@ -1,0 +1,20 @@
+# The overlays set ingressClassName and the controller-specific annotations.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webtorrentio
+spec:
+  rules:
+    - host: webtorrentio.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webtorrentio
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - webtorrentio.example.com
