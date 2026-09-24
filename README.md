@@ -23,6 +23,8 @@ episode and streams the result over HTTP through a built-in
   redirects) until data is there instead of timing out.
 - Binge-watching: near the end of an episode, the next one is prepared so it starts at once.
 - Re-opening something watched before starts at once: headers and indexes are kept (up to 500 MB).
+- Optional stereo audio conversion (ffmpeg): 5.1/7.1 audio mixed down without clipping, for
+  players whose own downmix pops and crackles.
 - Docker and docker-compose setup with optional automatic HTTPS (Caddy).
 - Kubernetes manifests (Kustomize) with a Traefik ingress and Let's Encrypt.
 
@@ -201,6 +203,38 @@ metadata lookup and serves those parts at once (a test: first byte in 0.02 s).
 - At startup, data left by a crash is deleted, but only in a folder that contains the
   `.stremio-webtorrent` marker file or is empty. A wrong `DOWNLOAD_PATH` never deletes your files.
 
+## Stereo audio conversion
+
+Players mix 5.1 and 7.1 audio down to stereo themselves, and many do it without headroom: in
+loud scenes the sum goes past full scale and clips, which sounds like pops, crackling or
+distortion. With the conversion on, every result in Stremio gets a second entry, **Stereo**,
+where the server mixes the audio down with a limiter, so it never clips. The loudness stays
+like the player's own downmix. It also turns AC3, E-AC3, DTS and TrueHD into AAC, which every
+player can decode.
+
+Turn it on with `AUDIO_CONVERSIONS=2` (conversions that may run at once; `on` means 2, `0` or
+`off` turns it off), or change **Audio conversions** in the TUI while the server runs (key
+`7`). With it off, the Stereo entries disappear from the stream list.
+
+- Needs `ffmpeg`. The Docker image includes it; for `npm start`, install it (`brew install
+  ffmpeg`, `apt install ffmpeg`). Without it the TUI shows the conversion as unavailable.
+- The video is copied unchanged and only the audio is encoded (AAC, 192 kb/s stereo), so one
+  conversion needs about 2–5% of one CPU core while playing (it runs 40–50x faster than real
+  time) and about 55 MB of memory, and no GPU.
+- The output is HLS (6-second or longer segments cut at the file's keyframes), so seeking
+  works. Seeking to a part that is not converted yet restarts ffmpeg there; it catches up
+  within seconds when the torrent data is there.
+- Works for MP4 and MKV files with H.264 or HEVC video and an index (nearly all releases).
+  Other files answer with an error; play the normal entry instead.
+- Only the first audio track is kept, and embedded subtitles are dropped. Stremio's own
+  subtitles (OpenSubtitles) still work.
+- ffmpeg converts at most about 90 seconds ahead of the player, then pauses. Converted segments
+  live in `DOWNLOAD_PATH/conversions`, about 20 segments (2–3 minutes of video) per
+  conversion, outside `MAX_DISK_GB`. They are deleted 2 minutes after the player stops;
+  resuming later starts the conversion again.
+- A conversion reads the torrent like a player does, so the torrent limits, disk budgets and
+  readahead apply unchanged.
+
 ## Slow starts: waiting instead of timing out
 
 Opening a torrent means fetching its metadata from peers, then the first piece of the file.
@@ -248,7 +282,7 @@ the network), so you can close and reopen it while the server keeps running.
 | `a` | Add a user; shows the install link once. |
 | `d` | Delete a user added in the dashboard; their links stop working at once. |
 | `t` | Show or hide tokens. |
-| `1`–`6` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes). |
+| `1`–`7` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes), audio conversions at once (`0` = off). |
 | `x` | Remove a torrent, even while people watch it. |
 | `b`, `q`, Ctrl+C | Close the dashboard; the server keeps running. |
 | `s` | Stop the server (asks first). |
@@ -327,6 +361,7 @@ not the addon's tokens. Use
 - Volumes: `torrent-data` (temporary torrent data), `addon-state` (users, saved limits,
   header/index cache, admin socket).
 - The image builds native modules for the server's CPU (x64 and arm64), so uTP works on both.
+- The image includes ffmpeg for the stereo audio conversion (off by default, `AUDIO_CONVERSIONS`).
 - `docker compose stop` gives the addon 30 s to finish and save its header/index cache. Logs
   rotate at 10 MB (3 files).
 - A configuration error (for example the placeholder tokens from `.env.example`) is logged,
@@ -444,6 +479,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `NEXT_EPISODE_AT` | `0.9` | Share of an episode after which the next episode is prefetched; `0` turns it off. |
 | `NEXT_EPISODE_TTL_MS` | `1800000` | How long a next-episode prefetch is kept if unused. |
 | `EDGE_CACHE_MB` | `500` (maximum `500`) | Header and index cache of played files; `0` turns it off. |
+| `AUDIO_CONVERSIONS` | `0` (off) | [Stereo audio conversions](#stereo-audio-conversion) that may run at once; `on` means `2`. Needs ffmpeg. |
 | `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
 | `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
 | `MAX_CONNS` | `55` | Peer connections per torrent. |
@@ -465,6 +501,7 @@ Under `/<token>` when users exist.
 | `GET /configure` | Settings page. |
 | `GET /stream/:type/:id.json` | Stremio stream list. |
 | `GET /play/:infoHash/:fileIdx` | Video over HTTP with Range support; `fileIdx` is a number or `auto`. |
+| `GET /hls/:infoHash/:fileIdx/index.m3u8` | The same video as HLS with stereo audio (when the conversion is on); segments are `<n>.ts` next to it. |
 | `GET /dashboard` | Web dashboard. |
 | `GET /status` | Dashboard data as JSON (torrents, `connections`, `viewers`, `watchers`, disk). |
 | `DELETE /api/torrents/:infoHash` | Stop a torrent; `409` if another user is streaming it. |
@@ -496,6 +533,9 @@ Under `/<token>` when users exist.
   an old list: reopen the title so the list is loaded again.
 - **"Host ... is not allowed".** The server was reached through a host name it does not know.
   Add the name to `ALLOWED_HOSTS`, or use `PUBLIC_URL` with that name.
+- **Pops, crackling or distorted sound, mostly in loud scenes.** The player's downmix of 5.1 or
+  7.1 audio clips. Turn on the [stereo audio conversion](#stereo-audio-conversion) and pick the
+  **Stereo** entry.
 - **Wrong episode from a season pack.** Pack detection relies on `S01E02`-style file names.
   Choose a single-episode result.
 

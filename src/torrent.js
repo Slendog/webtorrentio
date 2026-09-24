@@ -79,7 +79,7 @@ const bump = (map, key, by) => {
   else map.delete(key)
 }
 
-const isIdle = entry => entry.connections === 0 && entry.pending.size === 0
+const isIdle = entry => entry.connections === 0 && entry.pending.size === 0 && entry.kept === 0
 const usedBy = (entry, user) => entry.users.has(user) || entry.pending.has(user)
 
 function scheduleIdle (entry) {
@@ -300,6 +300,7 @@ function getTorrent (infoHash) {
       prefetch: false,
       warmup: [],
       holds: new Map(),
+      kept: 0,
       idleTimer: null,
       addedAt: Date.now(),
       lastUsed: Date.now()
@@ -511,6 +512,35 @@ export function episodeViewers () {
   }
   return list
 }
+
+// Keep a torrent from going idle while something other than an HTTP stream needs it (an audio
+// conversion between two reads). Returns the function that releases it again.
+export function keepTorrent (entry) {
+  entry.kept++
+  clearTimeout(entry.idleTimer)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    entry.kept--
+    entry.lastUsed = Date.now()
+    scheduleIdle(entry)
+  }
+}
+
+// Bytes start..end (inclusive) of a file, downloaded on demand like a stream.
+export function readRange (entry, file, start, end, user) {
+  return new Promise((resolve, reject) => {
+    const parts = []
+    const stream = openStream(entry, file, start, end, user)
+    stream.on('data', buf => parts.push(buf))
+    stream.on('end', () => resolve(Buffer.concat(parts)))
+    stream.on('error', reject)
+    stream.on('close', () => reject(new Error('Torrent removed while reading')))
+  })
+}
+
+export const isRemoved = entry => entry.torrent.destroyed || !entries.has(entry.infoHash)
 
 // Returns "removed", "missing", or "busy" (someone else is streaming it).
 export function removeByHash (infoHash, user) {

@@ -9,6 +9,7 @@ import { socketPath } from './paths.js'
 import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, setLimit, statePath } from './settings.js'
 import { forceRemove, status } from './torrent.js'
 import { commands, fatal } from './runtime.js'
+import { conversionInfo } from './convert.js'
 
 // Admin API for the TUI dashboard, on a Unix socket readable only by the owner. It never
 // listens on a network port, so it is reachable only from this machine (or inside the container).
@@ -39,6 +40,7 @@ export async function startAdmin ({ stop }) {
     publicUrl: config.publicUrl,
     statePath,
     status: status(null),
+    conversions: conversionInfo(),
     users: listUsers(),
     limits: LIMITS.map((l, i) => ({ key: l.key, n: i + 1, label: l.label, unit: l.unit, zero: l.zero, value: limitValue(l), display: formatLimit(l) })),
     logs: logsSince(Number(req.query.since) || 0)

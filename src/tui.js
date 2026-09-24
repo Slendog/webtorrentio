@@ -190,6 +190,14 @@ export async function startTui () {
       row += cell + '   '
     }
     lines.push(row)
+    const conv = data.conversions
+    if (conv) {
+      const state = !conv.ffmpeg ? c.yellow('unavailable: ffmpeg is not installed')
+        : !conv.limit ? c.dim('off (set with the Audio conversions limit)')
+          : `${conv.active.length}/${conv.limit} running` + conv.active.map(a =>
+            c.dim(`   ${safe(a.user)}: ${safe(a.file || a.infoHash.slice(0, 8))} ${a.ready ? `segment ${a.segment + 1}/${a.segments}${a.paused ? ', paused ahead' : ''}` : 'loading'}`)).join('')
+      lines.push(fit(`    Stereo audio conversion: ${state}`, width))
+    }
     lines.push('')
 
     // Footer (help + prompt/message), then the log fills what is left.
@@ -200,7 +208,7 @@ export async function startTui () {
     } else {
       const color = { info: c.green, warn: c.yellow, error: c.red }[message?.level] || (s => s)
       footer.push(message ? color(message.text) : '')
-      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ' tokens  [1-6] edit limit  [x] remove torrent  ' +
+      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ` tokens  [1-${data.limits.length}] edit limit  [x] remove torrent  ` +
         '[b] background (keep server running)  [s] stop server'))
     }
 

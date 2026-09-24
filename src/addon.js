@@ -4,6 +4,7 @@ import { getMeta } from './meta.js'
 import { formatBytes, parseTags, TRACKERS } from './parse.js'
 import { rememberScraped, rememberStreamContext } from './registry.js'
 import { knownFile, prefetch } from './torrent.js'
+import { conversionAvailable } from './convert.js'
 import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
 export const manifest = {
@@ -69,6 +70,15 @@ function toStreams (t, query, playBase, mode) {
       url: `${playBase}/play/${t.infoHash}/auto${qs}`,
       behaviorHints: { bingeGroup, notWebReady: true, ...hints }
     })
+    // The same file with its audio mixed down to stereo on the server (see convert.js).
+    if (conversionAvailable()) {
+      streams.push({
+        name: label('Stereo', t),
+        title: `${title}\n🔊 Audio mixed down to stereo on the server (no clipping)`,
+        url: `${playBase}/hls/${t.infoHash}/auto/index.m3u8${qs}`,
+        behaviorHints: { bingeGroup: `webtorrent-stereo-${t.quality}`, notWebReady: true }
+      })
+    }
   }
 
   // Stremio's native engine picks the largest file when fileIdx is absent, which is wrong

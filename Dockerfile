@@ -15,6 +15,11 @@ RUN npm ci --omit=dev && npm cache clean --force
 # ---- Runtime stage: slim image without compilers; only the installed modules are copied.
 FROM node:22-slim
 
+# ffmpeg for the optional audio conversion (AUDIO_CONVERSIONS): video is copied, only the audio
+# is re-encoded, so no GPU is needed.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 ENV NODE_ENV=production \
     WEBTORRENTIO_DOCKER=1 \

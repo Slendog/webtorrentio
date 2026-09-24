@@ -63,6 +63,7 @@ export const dashboardHtml = `<!doctype html>
       <span class="muted"><b id="count">0</b> torrents</span>
       <span class="muted" id="limits"></span>
       <span class="muted">Disk <b id="disk">0 B</b></span>
+      <span class="muted" id="conversions"></span>
     </div>
   </header>
   <div id="list"></div>
@@ -169,6 +170,10 @@ export const dashboardHtml = `<!doctype html>
       document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' / ' + bytes(data.disk.limit) : '') +
         (data.edgeCache && data.edgeCache.limit ? ' · edge cache ' + bytes(data.edgeCache.bytes) + ' / ' + bytes(data.edgeCache.limit) : '')
       document.getElementById('limits').textContent = 'Limit: ' + data.maxTorrentsPerUser + ' torrents per user'
+      const conv = data.conversions
+      document.getElementById('conversions').textContent = conv && conv.limit
+        ? 'Stereo conversions ' + conv.active.length + ' / ' + conv.limit
+        : 'Stereo conversion off'
 
       const alive = new Set()
       for (const t of data.torrents) {

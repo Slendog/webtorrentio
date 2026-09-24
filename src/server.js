@@ -10,6 +10,7 @@ import { startAdmin } from './admin.js'
 import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
+import { conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import net from 'node:net'
@@ -38,7 +39,7 @@ app.use((req, res, next) => {
 
 // CORS only where Stremio needs it (Stremio Web fetches the manifest and stream lists from its
 // own origin). The dashboard, status and API stay same-origin, so other sites cannot read them.
-const stremioRoute = /\/(manifest\.json|stream\/[^/]+\/[^/]+\.json|play\/[^/]+\/[^/]+)$/
+const stremioRoute = /\/(manifest\.json|stream\/[^/]+\/[^/]+\.json|play\/[^/]+\/[^/]+|hls\/[^/]+\/[^/]+\/[^/]+)$/
 app.use((req, res, next) => {
   if (stremioRoute.test(req.path)) {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -143,7 +144,7 @@ router.get('/install', (req, res) =>
   res.redirect(`${config.publicUrl}${userBase(req)}/manifest.json`.replace(/^https?:\/\//, 'stremio://')))
 
 router.get('/dashboard', (req, res) => res.type('html').send(dashboardHtml))
-router.get('/status', (req, res) => res.json(status(req.user)))
+router.get('/status', (req, res) => res.json({ ...status(req.user), conversions: conversionInfo() }))
 
 router.delete('/api/torrents/:infoHash', (req, res) => {
   const result = removeByHash(req.params.infoHash.toLowerCase(), req.user)
@@ -283,6 +284,74 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   stream.pipe(res)
 })
 
+// The same file as HLS with its audio mixed down to stereo (see convert.js):
+// /hls/<infoHash>/<fileIdx>/index.m3u8 and /hls/<infoHash>/<fileIdx>/<n>.ts.
+router.get('/hls/:infoHash/:fileIdx/:name', async (req, res) => {
+  const { infoHash, fileIdx, name } = req.params
+  if (!/^[a-fA-F0-9]{40}$/.test(infoHash)) return res.status(400).send('Bad infoHash')
+  if (fileIdx !== 'auto' && !/^\d{1,6}$/.test(fileIdx)) return res.status(400).send('Bad file index')
+  if (!authRequired() && !getScraped(infoHash.toLowerCase())) {
+    return res.status(404).send('Unknown torrent. Open it from the stream list in Stremio.')
+  }
+  const isPlaylist = name === 'index.m3u8'
+  const segMatch = name.match(/^(\d{1,6})\.ts$/)
+  if (!isPlaylist && !segMatch) return res.status(404).end()
+  const season = req.query.s ? Number(req.query.s) : undefined
+  const episode = req.query.e ? Number(req.query.e) : undefined
+  const t0 = Date.now()
+  const waits = Number(req.query.w) || 0
+  const canWait = waits < config.playMaxWaits
+  const aborted = new AbortController()
+  res.on('close', () => aborted.abort())
+  // Waiting instead of timing out, as for /play: redirect to the same URL before the player gives up.
+  const redirect = () => {
+    const url = new URL(req.originalUrl, 'http://placeholder')
+    url.searchParams.set('w', String(waits + 1))
+    res.redirect(307, url.pathname + url.search)
+  }
+  const fail = err => {
+    console.warn(`[convert] ${req.user} ${infoHash.slice(0, 8)} ${name}: ${oneLine(err.message)}`)
+    if (!res.headersSent) res.status(err.status || 502).send(err.message)
+  }
+
+  let session
+  try {
+    session = getSession(req.user, infoHash, fileIdx, season, episode)
+    let timer
+    const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), canWait ? config.playWaitMs : 120_000) })
+    const ready = await Promise.race([session.ready, late])
+    clearTimeout(timer)
+    if (!ready) return canWait ? redirect() : res.status(504).send('Torrent metadata not ready')
+  } catch (err) {
+    return fail(err)
+  }
+
+  if (isPlaylist) {
+    const qs = new URLSearchParams()
+    if (season != null) qs.set('s', season)
+    if (episode != null) qs.set('e', episode)
+    res.type('application/vnd.apple.mpegurl')
+    return res.send(playlist(session, qs.size ? `?${qs}` : ''))
+  }
+
+  let file
+  try {
+    const left = Math.max(1000, config.playWaitMs - (Date.now() - t0))
+    file = await segment(session, Number(segMatch[1]), canWait ? left : 120_000, aborted.signal)
+  } catch (err) {
+    return fail(err)
+  }
+  if (file === undefined) return res.status(404).end()
+  if (!file) {
+    if (aborted.signal.aborted) return
+    return canWait ? redirect() : res.status(504).send('Segment not ready')
+  }
+  res.type('video/mp2t')
+  res.sendFile(file, err => {
+    if (err && !res.headersSent) res.status(404).end()
+  })
+})
+
 // Users can be added and removed while the server runs, so the token check happens per request:
 // with users, every route lives under "/<token>"; without users, the addon is open.
 app.use((req, res, next) => {
@@ -349,6 +418,7 @@ function startupSummary () {
 async function stop (reason = 'unknown') {
   console.log(`Shutting down (${reason}), cleaning up torrents...`)
   servers.forEach(s => s.close())
+  stopAllConversions()
   await shutdown()
   process.exit(0)
 }

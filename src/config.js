@@ -119,6 +119,9 @@ export const config = {
   prefetchTtlMs: Number(env.PREFETCH_TTL_MS) || 2 * 60 * 1000,
   prefetchHeadBytes: (env.PREFETCH_HEAD_MB !== undefined ? Number(env.PREFETCH_HEAD_MB) : 8) * 1024 ** 2,
   prefetchTailBytes: (env.PREFETCH_TAIL_MB !== undefined ? Number(env.PREFETCH_TAIL_MB) : 4) * 1024 ** 2,
+  // Audio conversions (stereo downmix without clipping, served as HLS; needs ffmpeg) that may
+  // run at once. 0 or "off" turns the feature off; "on" means 2. See convert.js.
+  audioConversions: ({ on: 2, off: 0 })[(env.AUDIO_CONVERSIONS || '').trim().toLowerCase()] ?? (Number(env.AUDIO_CONVERSIONS) || 0),
   // Persistent cache of the header and index pieces of played files (see edge-cache.js).
   // Capped at 500 MB; 0 turns it off.
   edgeCacheBytes: Math.min(env.EDGE_CACHE_MB !== undefined ? Number(env.EDGE_CACHE_MB) : 500, 500) * 1024 ** 2,
