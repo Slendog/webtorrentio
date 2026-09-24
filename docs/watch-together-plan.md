@@ -1,7 +1,8 @@
 # Plan: watch together in the browser
 
-Status: proposal, not started. Revised after the stereo audio conversion (`src/convert.js`)
-was built, which provides most of the media side.
+Status: phases 1 to 4 are built (`src/rooms.js`, `src/watch-page.js`, `src/subtitles.js`;
+see "Watch together" in the README). Phase 5 (video transcoding) waits for the GPU decision.
+Decisions taken: no guest links, everyone controls by default (host-only setting), no chat.
 
 ## Goal
 

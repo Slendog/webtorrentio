@@ -17,7 +17,9 @@ episode and streams the result over HTTP through a built-in
 - Disk limits for the whole cache and per stream; the cache rolls instead of growing.
 - Several users with personal access tokens, and hard limits per user and per server.
 - Web dashboard and a terminal (TUI) dashboard: speeds, peers, disk use, buffer ahead, users,
-  limits, and an estimated timestamp per viewer for watching together.
+  limits, and an estimated timestamp per viewer.
+- Watch together: a browser room where everyone plays the same video in sync (play, pause,
+  seek, speed, waiting for whoever buffers), with subtitles.
 - Background server mode; the TUI can attach to and detach from a running server.
 - Fast starts: the top results are prefetched, and for all others the player waits (with
   redirects) until data is there instead of timing out.
@@ -235,6 +237,50 @@ Turn it on with `AUDIO_CONVERSIONS=2` (conversions that may run at once; `on` me
 - A conversion reads the torrent like a player does, so the torrent limits, disk budgets and
   readahead apply unchanged.
 
+## Watch together
+
+A room in the browser where several people watch the same video at the same moment. Anyone
+in the room can play, pause, seek or change the speed, and everyone follows within a fraction of
+a second. It needs the [stereo audio conversion](#stereo-audio-conversion) (`AUDIO_CONVERSIONS`),
+which makes the audio playable in every browser.
+
+**Start a room:** in Stremio, the top three results get a **Together** entry. It opens the
+browser, creates a room and joins it. Copy the invite link from the page
+(`https://<server>/watch/<room>`) and send it to the others.
+
+**Join:** open the invite link. The first time, the page asks for your own install link (the
+one you use in Stremio); the browser remembers it for later rooms. Invite links contain no
+token, so everyone watches with their own account and limits. Enter a name and press **Join and
+play**.
+
+How it behaves:
+
+- **Sync:** the server keeps one playback clock for the room. Each browser corrects its own
+  drift: from 0.15 s by playing 5–10% faster or slower (inaudible), from 2 s by seeking. In
+  tests between Chromium, Firefox and Safari's engine the difference stayed at or below 0.15 s.
+- **Waiting for everyone** (on by default): when someone's video stalls, the room pauses and
+  shows who it waits for, then resumes everyone together. The host can turn it off; then the
+  stalled person catches up alone.
+- **Host settings:** the person who opened the room can switch to "only I control playback"
+  and can close the room.
+- **Subtitles** come from OpenSubtitles (the same source as Stremio's), in every language
+  available; each person picks their own.
+- **One conversion per room:** everyone streams the room's single conversion, so a room of five
+  costs one ffmpeg process and counts once against `AUDIO_CONVERSIONS`. It is stopped when the
+  last person leaves and started again by the next one. A room nobody is in is closed after
+  10 minutes.
+- **Browsers and codecs:** H.264 releases play everywhere. HEVC (x265) releases play in Safari,
+  Edge, and Chrome or Firefox on computers with HEVC hardware decoding (most Macs, many Windows
+  PCs). The page checks this before joining and says so when the browser cannot play the file.
+- **Limits:** `MAX_ROOMS` (default 3) rooms at once, key `8` in the TUI; `0` turns watch
+  together off. Each room needs a free audio conversion, so keep `AUDIO_CONVERSIONS` at least
+  `MAX_ROOMS` if people also use the Stereo entries.
+- Both dashboards list the rooms (who is in them, playing or paused, buffering); the web
+  dashboard has a Join link, and `r` in the TUI closes a room.
+
+The dashboards' "Watching" line (estimated timestamps per viewer) still works for people who
+prefer Stremio's own player.
+
 ## Slow starts: waiting instead of timing out
 
 Opening a torrent means fetching its metadata from peers, then the first piece of the file.
@@ -282,7 +328,8 @@ the network), so you can close and reopen it while the server keeps running.
 | `a` | Add a user; shows the install link once. |
 | `d` | Delete a user added in the dashboard; their links stop working at once. |
 | `t` | Show or hide tokens. |
-| `1`–`7` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes), audio conversions at once (`0` = off). |
+| `1`–`8` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes), audio conversions at once (`0` = off), watch-together rooms (`0` = off). |
+| `r` | Close a watch-together room. |
 | `x` | Remove a torrent, even while people watch it. |
 | `b`, `q`, Ctrl+C | Close the dashboard; the server keeps running. |
 | `s` | Stop the server (asks first). |
@@ -480,6 +527,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `NEXT_EPISODE_TTL_MS` | `1800000` | How long a next-episode prefetch is kept if unused. |
 | `EDGE_CACHE_MB` | `500` (maximum `500`) | Header and index cache of played files; `0` turns it off. |
 | `AUDIO_CONVERSIONS` | `0` (off) | [Stereo audio conversions](#stereo-audio-conversion) that may run at once; `on` means `2`. Needs ffmpeg. |
+| `MAX_ROOMS` | `3` | [Watch-together](#watch-together) rooms at once; `0` turns it off. Needs `AUDIO_CONVERSIONS`. |
 | `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
 | `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
 | `MAX_CONNS` | `55` | Peer connections per torrent. |
@@ -502,6 +550,9 @@ Under `/<token>` when users exist.
 | `GET /stream/:type/:id.json` | Stremio stream list. |
 | `GET /play/:infoHash/:fileIdx` | Video over HTTP with Range support; `fileIdx` is a number or `auto`. |
 | `GET /hls/:infoHash/:fileIdx/index.m3u8` | The same video as HLS with stereo audio (when the conversion is on); segments are `<n>.ts` next to it. |
+| `GET /watch/new?h=&i=&type=&id=` | Create a watch-together room and open it. |
+| `GET /watch/:room` | Room page. Without a token (invite link) a page that asks for the member's install link. |
+| `GET /watch/:room/events` | Room state as Server-Sent Events; `POST /watch/:room/action` and `/report` send actions and playback reports. |
 | `GET /dashboard` | Web dashboard. |
 | `GET /status` | Dashboard data as JSON (torrents, `connections`, `viewers`, `watchers`, disk). |
 | `DELETE /api/torrents/:infoHash` | Stop a torrent; `409` if another user is streaming it. |

@@ -122,6 +122,9 @@ export const config = {
   // Audio conversions (stereo downmix without clipping, served as HLS; needs ffmpeg) that may
   // run at once. 0 or "off" turns the feature off; "on" means 2. See convert.js.
   audioConversions: ({ on: 2, off: 0 })[(env.AUDIO_CONVERSIONS || '').trim().toLowerCase()] ?? (Number(env.AUDIO_CONVERSIONS) || 0),
+  // Watch-together rooms open at once (rooms.js); 0 turns watch together off. Rooms need the
+  // audio conversion, and each room uses one of AUDIO_CONVERSIONS.
+  maxRooms: env.MAX_ROOMS !== undefined ? Number(env.MAX_ROOMS) : 3,
   // Persistent cache of the header and index pieces of played files (see edge-cache.js).
   // Capped at 500 MB; 0 turns it off.
   edgeCacheBytes: Math.min(env.EDGE_CACHE_MB !== undefined ? Number(env.EDGE_CACHE_MB) : 500, 500) * 1024 ** 2,

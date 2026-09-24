@@ -5,6 +5,7 @@ import { formatBytes, parseTags, TRACKERS } from './parse.js'
 import { rememberScraped, rememberStreamContext } from './registry.js'
 import { knownFile, prefetch } from './torrent.js'
 import { conversionAvailable } from './convert.js'
+import { roomsAvailable } from './rooms.js'
 import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
 export const manifest = {
@@ -55,7 +56,7 @@ function describe (t) {
   ].join('\n')
 }
 
-function toStreams (t, query, playBase, mode) {
+function toStreams (t, query, playBase, mode, watchBase, rank) {
   const streams = []
   const bingeGroup = `webtorrent-${t.quality}`
   // Known once the torrent's file list is (running or cached): helps Stremio match subtitles.
@@ -79,6 +80,17 @@ function toStreams (t, query, playBase, mode) {
         behaviorHints: { bingeGroup: `webtorrent-stereo-${t.quality}`, notWebReady: true }
       })
     }
+    // Watch together in the browser (rooms.js), for the best few results only.
+    if (watchBase && rank < WATCH_TOGETHER_RESULTS && roomsAvailable()) {
+      const id = query.type === 'series' ? `${query.imdbId}:${query.season}:${query.episode}` : query.imdbId
+      const params = new URLSearchParams({ h: t.infoHash, i: 'auto', type: query.type, id })
+      if (query.type === 'series') { params.set('s', query.season); params.set('e', query.episode) }
+      streams.push({
+        name: label('Together', t),
+        title: `${title}\n👥 Opens a watch-together room in the browser, to share with others`,
+        externalUrl: `${watchBase}/watch/new?${params}`
+      })
+    }
   }
 
   // Stremio's native engine picks the largest file when fileIdx is absent, which is wrong
@@ -96,6 +108,9 @@ function toStreams (t, query, playBase, mode) {
 }
 
 export const STREAM_MODES = ['webtorrent', 'native', 'both']
+
+// Results that get a "Together" entry.
+const WATCH_TOGETHER_RESULTS = 3
 
 // Per-install settings from the Configure page, stored base64url-encoded JSON in the addon URL:
 // { url: "https://server", scrapers: ["yts", "tpb"], mode: "webtorrent" }.
@@ -137,7 +152,7 @@ export async function findTorrents (type, id, scraperKeys) {
 
 // Stremio stream response. playBase is the URL prefix of /play links, including the
 // user's access token, so every user gets links that only work for them.
-export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl, user) {
+export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl, user, watchBase) {
   const scraperKeys = resolveScraperKeys(userConfig.scrapers || config.scrapers)
   // Indexes are off by default. Show one entry that explains it instead of an empty list.
   if (!scraperKeys.length) {
@@ -165,7 +180,7 @@ export async function streamResponse (type, id, playBase, userConfig = {}, confi
       })
     }
     // Short client cache: peer counts go stale fast, and a long cache hides addon updates.
-    return { streams: torrents.flatMap(t => toStreams(t, query, playBase, mode)), cacheMaxAge: 5 * 60 }
+    return { streams: torrents.flatMap((t, i) => toStreams(t, query, playBase, mode, watchBase, i)), cacheMaxAge: 5 * 60 }
   } catch (err) {
     console.error(`[stream] ${type} ${id}: ${err.message}`)
     return { streams: [] }

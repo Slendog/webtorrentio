@@ -104,9 +104,11 @@ export function activeConversions () {
 }
 
 // The conversion of one file for one user, created on the first playlist or segment request.
+// A watch-together room passes its own `key`, so all its members share one conversion; `user`
+// is then the room's host, whose limits the conversion counts against.
 // Throws LimitError when AUDIO_CONVERSIONS are all in use.
-export function getSession (user, infoHash, fileIdx, season, episode) {
-  const key = keyOf(user, infoHash, fileIdx, season, episode)
+export function getSession (user, infoHash, fileIdx, season, episode, { key: sharedKey } = {}) {
+  const key = sharedKey ? `room\n${sharedKey}` : keyOf(user, infoHash, fileIdx, season, episode)
   let session = sessions.get(key)
   if (!session) {
     if (!conversionAvailable()) throw new LimitError('Audio conversion is turned off on this server.', 503)
@@ -124,6 +126,7 @@ export function getSession (user, infoHash, fileIdx, season, episode) {
       release: null,
       starts: null,
       duration: 0,
+      videoCodec: null,
       done: new Set(),
       run: null,
       lastRequested: 0,
@@ -153,6 +156,7 @@ async function prepare (session, fileIdx, season, episode) {
   if (!VIDEO_CODECS.has(index.videoCodec)) throw new UnsupportedError(`${file.name}: video codec ${index.videoCodec} is not supported for conversion (H.264 and HEVC are)`)
   session.starts = segmentStarts(index.keyframes)
   session.duration = index.duration
+  session.videoCodec = index.videoCodec
   session.dir = path.join(root, session.id)
   fs.mkdirSync(session.dir, { recursive: true })
   await inputReady
@@ -162,6 +166,8 @@ async function prepare (session, fileIdx, season, episode) {
 
 function touch (session) {
   session.lastUsed = Date.now()
+  // Rooms keep their conversion alive themselves (see rooms.js) and end it when they close.
+  if (session.key.startsWith('room\n')) return
   clearTimeout(session.idleTimer)
   session.idleTimer = setTimeout(() => {
     console.log(`[convert] ${session.user} ${session.file ? oneLine(session.file.name) : session.infoHash.slice(0, 8)}: idle, stopped`)
@@ -178,6 +184,12 @@ function endSession (session) {
   for (const w of session.waiters) w(false)
   session.release?.()
   if (session.dir) fs.rm(session.dir, { recursive: true, force: true }, () => {})
+}
+
+// Stop a conversion now (a watch-together room was closed).
+export function endSharedSession (sharedKey) {
+  const s = sessions.get(`room\n${sharedKey}`)
+  if (s) endSession(s)
 }
 
 export function stopAllConversions () {

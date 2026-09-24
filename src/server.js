@@ -11,6 +11,11 @@ import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
 import { conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
+import { act, closeAllRooms, closeRoom, createRoom, getRoom, join, report, roomStatus } from './rooms.js'
+import { subtitleList, subtitleVtt } from './subtitles.js'
+import { joinPage, WATCH_CSP, watchPage } from './watch-page.js'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import net from 'node:net'
@@ -110,7 +115,7 @@ configurable.get('/stream/:type/:id.json', async (req, res) => {
     return res.status(429).json({ streams: [] })
   }
   const playBase = (req.userConfig.url || config.streamUrl) + userBase(req)
-  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`, req.user))
+  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`, req.user, config.publicUrl + userBase(req)))
 })
 
 // ---- All routes of one user
@@ -144,7 +149,7 @@ router.get('/install', (req, res) =>
   res.redirect(`${config.publicUrl}${userBase(req)}/manifest.json`.replace(/^https?:\/\//, 'stremio://')))
 
 router.get('/dashboard', (req, res) => res.type('html').send(dashboardHtml))
-router.get('/status', (req, res) => res.json({ ...status(req.user), conversions: conversionInfo() }))
+router.get('/status', (req, res) => res.json({ ...status(req.user), conversions: conversionInfo(), rooms: roomStatus() }))
 
 router.delete('/api/torrents/:infoHash', (req, res) => {
   const result = removeByHash(req.params.infoHash.toLowerCase(), req.user)
@@ -284,20 +289,12 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   stream.pipe(res)
 })
 
-// The same file as HLS with its audio mixed down to stereo (see convert.js):
-// /hls/<infoHash>/<fileIdx>/index.m3u8 and /hls/<infoHash>/<fileIdx>/<n>.ts.
-router.get('/hls/:infoHash/:fileIdx/:name', async (req, res) => {
-  const { infoHash, fileIdx, name } = req.params
-  if (!/^[a-fA-F0-9]{40}$/.test(infoHash)) return res.status(400).send('Bad infoHash')
-  if (fileIdx !== 'auto' && !/^\d{1,6}$/.test(fileIdx)) return res.status(400).send('Bad file index')
-  if (!authRequired() && !getScraped(infoHash.toLowerCase())) {
-    return res.status(404).send('Unknown torrent. Open it from the stream list in Stremio.')
-  }
+// HLS with the audio mixed down to stereo (see convert.js): the playlist, or segment n.
+// `open` returns the conversion session; `query` is appended to segment URLs in the playlist.
+async function serveHls (req, res, { name, open, query = '', label }) {
   const isPlaylist = name === 'index.m3u8'
   const segMatch = name.match(/^(\d{1,6})\.ts$/)
   if (!isPlaylist && !segMatch) return res.status(404).end()
-  const season = req.query.s ? Number(req.query.s) : undefined
-  const episode = req.query.e ? Number(req.query.e) : undefined
   const t0 = Date.now()
   const waits = Number(req.query.w) || 0
   const canWait = waits < config.playMaxWaits
@@ -310,13 +307,13 @@ router.get('/hls/:infoHash/:fileIdx/:name', async (req, res) => {
     res.redirect(307, url.pathname + url.search)
   }
   const fail = err => {
-    console.warn(`[convert] ${req.user} ${infoHash.slice(0, 8)} ${name}: ${oneLine(err.message)}`)
+    console.warn(`[convert] ${req.user} ${label} ${name}: ${oneLine(err.message)}`)
     if (!res.headersSent) res.status(err.status || 502).send(err.message)
   }
 
   let session
   try {
-    session = getSession(req.user, infoHash, fileIdx, season, episode)
+    session = open()
     let timer
     const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), canWait ? config.playWaitMs : 120_000) })
     const ready = await Promise.race([session.ready, late])
@@ -327,11 +324,8 @@ router.get('/hls/:infoHash/:fileIdx/:name', async (req, res) => {
   }
 
   if (isPlaylist) {
-    const qs = new URLSearchParams()
-    if (season != null) qs.set('s', season)
-    if (episode != null) qs.set('e', episode)
     res.type('application/vnd.apple.mpegurl')
-    return res.send(playlist(session, qs.size ? `?${qs}` : ''))
+    return res.send(playlist(session, query))
   }
 
   let file
@@ -350,7 +344,157 @@ router.get('/hls/:infoHash/:fileIdx/:name', async (req, res) => {
   res.sendFile(file, err => {
     if (err && !res.headersSent) res.status(404).end()
   })
+}
+
+// The same file as HLS with stereo audio: /hls/<infoHash>/<fileIdx>/index.m3u8 and <n>.ts.
+router.get('/hls/:infoHash/:fileIdx/:name', (req, res) => {
+  const { infoHash, fileIdx, name } = req.params
+  if (!/^[a-fA-F0-9]{40}$/.test(infoHash)) return res.status(400).send('Bad infoHash')
+  if (fileIdx !== 'auto' && !/^\d{1,6}$/.test(fileIdx)) return res.status(400).send('Bad file index')
+  if (!authRequired() && !getScraped(infoHash.toLowerCase())) {
+    return res.status(404).send('Unknown torrent. Open it from the stream list in Stremio.')
+  }
+  const season = req.query.s ? Number(req.query.s) : undefined
+  const episode = req.query.e ? Number(req.query.e) : undefined
+  const qs = new URLSearchParams()
+  if (season != null) qs.set('s', season)
+  if (episode != null) qs.set('e', episode)
+  return serveHls(req, res, {
+    name,
+    label: infoHash.slice(0, 8),
+    query: qs.size ? `?${qs}` : '',
+    open: () => getSession(req.user, infoHash, fileIdx, season, episode)
+  })
 })
+
+// ---- Watch together (rooms.js, watch-page.js)
+
+const watch = express.Router({ mergeParams: true })
+router.use('/watch', watch)
+
+watch.get('/time', (req, res) => res.json({ t: Date.now() }))
+
+// Opened from the "Together" entry in Stremio: create a room and go to it.
+watch.get('/new', (req, res) => {
+  const { h, i = 'auto', s, e, type, id } = req.query
+  if (!/^[a-fA-F0-9]{40}$/.test(h || '')) return res.status(400).send('Bad infoHash')
+  if (i !== 'auto' && !/^\d{1,6}$/.test(i)) return res.status(400).send('Bad file index')
+  if (!authRequired() && !getScraped(h.toLowerCase())) return res.status(404).send('Unknown torrent. Open it from the stream list in Stremio.')
+  try {
+    const room = createRoom({
+      host: req.user,
+      infoHash: h,
+      fileIdx: i,
+      season: s ? Number(s) : undefined,
+      episode: e ? Number(e) : undefined,
+      type: ['movie', 'series'].includes(type) ? type : null,
+      stremioId: VALID_ID.test(id || '') ? id : null,
+      name: getScraped(h.toLowerCase())?.name
+    })
+    res.redirect(303, `${userBase(req)}/watch/${room.id}`)
+  } catch (err) {
+    res.status(err.status || 500).type('text').send(err.message)
+  }
+})
+
+// Every other /watch/<room> route needs the room.
+watch.param('room', (req, res, next, id) => {
+  const room = getRoom(id)
+  if (!room) return res.status(404).type('text').send('This room does not exist (any more).')
+  req.room = room
+  next()
+})
+
+watch.get('/:room', (req, res) => {
+  const { room } = req
+  res.type('html')
+  res.setHeader('Content-Security-Policy', WATCH_CSP)
+  res.send(watchPage({
+    roomId: room.id,
+    user: req.user,
+    isHost: req.user === room.host,
+    shareUrl: `${config.publicUrl}/watch/${room.id}`,
+    title: room.name || 'Watch together',
+    auth: authRequired()
+  }))
+})
+
+const roomSession = room => getSession(room.host, room.infoHash, room.fileIdx, room.season, room.episode, { key: room.id })
+
+// File details for the page, once the torrent and its index are loaded (202 until then).
+watch.get('/:room/info', async (req, res) => {
+  const { room } = req
+  let session
+  try {
+    session = roomSession(room)
+  } catch (err) {
+    return res.status(err.status || 500).send(err.message)
+  }
+  let timer
+  const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), 10_000) })
+  try {
+    const ready = await Promise.race([session.ready, late])
+    if (!ready) return res.status(202).json({ loading: true })
+  } catch (err) {
+    return res.status(err.status || 502).send(err.message)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!room.subtitles) {
+    room.subtitles = room.stremioId && room.type
+      ? await subtitleList(room.type, room.stremioId).catch(err => { console.warn(`[room] subtitles: ${oneLine(err.message)}`); return [] })
+      : []
+  }
+  res.json({
+    name: session.file?.name || room.name,
+    videoCodec: session.videoCodec,
+    duration: session.duration,
+    subtitles: room.subtitles.map(s => ({ id: s.id, lang: s.lang }))
+  })
+})
+
+watch.get('/:room/hls/:name', (req, res) => serveHls(req, res, {
+  name: req.params.name,
+  label: `room ${req.room.id}`,
+  open: () => roomSession(req.room)
+}))
+
+watch.get('/:room/sub/:n.vtt', async (req, res) => {
+  const entry = req.room.subtitles?.[Number(req.params.n)]
+  if (!entry) return res.status(404).end()
+  try {
+    res.type('text/vtt').send(await subtitleVtt(entry))
+  } catch (err) {
+    res.status(502).send(err.message)
+  }
+})
+
+watch.get('/:room/events', (req, res) => {
+  try {
+    join(req.room, { user: req.user, clientId: String(req.query.cid || ''), name: req.query.name, res })
+  } catch (err) {
+    res.status(err.status || 400).send(err.message)
+  }
+})
+
+const roomAction = fn => (req, res) => {
+  try {
+    fn(req)
+    res.status(204).end()
+  } catch (err) {
+    res.status(err.status || 400).type('text').send(err.message)
+  }
+}
+watch.post('/:room/action', express.json({ limit: '4kb' }), roomAction(req => act(req.room, { ...req.body, user: req.user })))
+watch.post('/:room/report', express.json({ limit: '4kb' }), roomAction(req => report(req.room, { ...req.body, user: req.user })))
+watch.post('/:room/close', roomAction(req => {
+  if (req.user !== req.room.host) throw Object.assign(new Error('Only the host can close the room.'), { status: 403 })
+  closeRoom(req.room.id, `closed by ${req.user}`)
+}))
+
+// hls.js for the room page. Public: it is a published library, no data of this server.
+const hlsJs = path.join(path.dirname(fileURLToPath(import.meta.resolve('hls.js'))), 'hls.min.js')
+app.get('/assets/hls.min.js', (req, res) => res.set('Cache-Control', 'public, max-age=86400').type('js').sendFile(hlsJs))
 
 // Users can be added and removed while the server runs, so the token check happens per request:
 // with users, every route lives under "/<token>"; without users, the addon is open.
@@ -362,6 +506,9 @@ app.use((req, res, next) => {
   }
   const token = req.path.split('/')[1]
   if (!token) return res.type('html').send(lockedPage(manifest))
+  // Invite links (/watch/<room>) carry no token: the page asks for the member's own link.
+  const invite = req.path.match(/^\/watch\/([\w-]{1,20})\/?$/)
+  if (invite && req.method === 'GET') return res.type('html').send(joinPage(invite[1]))
   const user = userForToken(token)
   // 404 rather than 401: an unknown path and a wrong token look the same from outside.
   if (!user) return res.status(404).send('Not found')
@@ -418,6 +565,7 @@ function startupSummary () {
 async function stop (reason = 'unknown') {
   console.log(`Shutting down (${reason}), cleaning up torrents...`)
   servers.forEach(s => s.close())
+  closeAllRooms()
   stopAllConversions()
   await shutdown()
   process.exit(0)

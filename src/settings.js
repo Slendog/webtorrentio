@@ -19,7 +19,8 @@ export const LIMITS = [
   { key: 'maxDiskPerStreamBytes', label: 'Disk per stream', unit: 'MB', scale: MB, min: 0, max: 10_000_000, zero: 'unlimited', minNonZero: 128 },
   { key: 'readaheadBytes', label: 'Readahead', unit: 'MB', scale: MB, min: 16, max: 100_000 },
   { key: 'idleTimeoutMs', label: 'Idle timeout', unit: 'min', scale: 60_000, min: 0.1, max: 1440 },
-  { key: 'audioConversions', label: 'Audio conversions', unit: '', scale: 1, min: 0, max: 20, zero: 'off' }
+  { key: 'audioConversions', label: 'Audio conversions', unit: '', scale: 1, min: 0, max: 20, zero: 'off' },
+  { key: 'maxRooms', label: 'Watch-together rooms', unit: '', scale: 1, min: 0, max: 20, zero: 'off' }
 ]
 
 const users = new Map() // name -> { token, source: 'env' | 'runtime', createdAt }

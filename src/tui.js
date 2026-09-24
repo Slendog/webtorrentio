@@ -200,6 +200,18 @@ export async function startTui () {
     }
     lines.push('')
 
+    // Watch-together rooms
+    const rooms = data.rooms || []
+    if (rooms.length) {
+      lines.push(section(`Watch-together rooms (${rooms.length})`, width))
+      rooms.forEach((r, i) => {
+        const state = r.waiting ? c.yellow('waiting for buffering') : r.playing ? c.green('▶ playing') : c.dim('paused')
+        const people = r.members.map(m => safe(m.name) + (m.buffering ? c.yellow(' ⏳') : '') + (m.drift != null && Math.abs(m.drift) >= 0.5 ? c.dim(` ${m.drift > 0 ? '+' : ''}${m.drift}s`) : '')).join(', ') || c.dim('nobody connected')
+        lines.push(fit(`  ${pad(i + 1, 2)} ${pad(safe(r.name || r.infoHash.slice(0, 8)), 40)} ${state} at ${clock(r.position)}  host ${safe(r.host)}  ${people}`, width))
+      })
+      lines.push('')
+    }
+
     // Footer (help + prompt/message), then the log fills what is left.
     const footer = []
     if (prompt) {
@@ -208,7 +220,7 @@ export async function startTui () {
     } else {
       const color = { info: c.green, warn: c.yellow, error: c.red }[message?.level] || (s => s)
       footer.push(message ? color(message.text) : '')
-      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ` tokens  [1-${data.limits.length}] edit limit  [x] remove torrent  ` +
+      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ` tokens  [1-${data.limits.length}] edit limit  [x] remove torrent  [r] close room  ` +
         '[b] background (keep server running)  [s] stop server'))
     }
 
@@ -279,6 +291,15 @@ export async function startTui () {
           if (!t) return flash(`No torrent #${n}`, 'error')
           act(() => adminRequest('DELETE', `/torrents/${t.infoHash}`), () => flash(`Removed ${safe(t.name)}`))
         })
+      case 'r': {
+        const rooms = data.rooms || []
+        if (!rooms.length) return flash('No watch-together rooms.', 'warn')
+        return ask(`Close room # (1-${rooms.length}); ends it for everyone:`, n => {
+          const r = rooms[Number(n) - 1]
+          if (!r) return flash(`No room #${n}`, 'error')
+          act(() => adminRequest('DELETE', `/rooms/${r.id}`), () => flash(`Closed room ${r.id}`))
+        })
+      }
       case 'b':
       case 'q':
         return leave()

@@ -51,6 +51,7 @@ export const dashboardHtml = `<!doctype html>
   .playing { margin-top: 10px; font-size: 13px; color: var(--muted); word-break: break-word; }
   .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
   .error { color: var(--danger); }
+  a.join { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -66,6 +67,7 @@ export const dashboardHtml = `<!doctype html>
       <span class="muted" id="conversions"></span>
     </div>
   </header>
+  <div id="rooms"></div>
   <div id="list"></div>
 </main>
 <script>
@@ -170,6 +172,13 @@ export const dashboardHtml = `<!doctype html>
       document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' / ' + bytes(data.disk.limit) : '') +
         (data.edgeCache && data.edgeCache.limit ? ' · edge cache ' + bytes(data.edgeCache.bytes) + ' / ' + bytes(data.edgeCache.limit) : '')
       document.getElementById('limits').textContent = 'Limit: ' + data.maxTorrentsPerUser + ' torrents per user'
+      const rooms = data.rooms || []
+      document.getElementById('rooms').innerHTML = rooms.map(r =>
+        '<div class="card"><div class="top"><div><div class="name">👥 ' + esc(r.name || r.infoHash) + '</div>' +
+        '<div class="badges"><span class="badge' + (r.playing ? ' live' : '') + '">' + (r.waiting ? 'waiting for buffering' : r.playing ? 'playing' : 'paused') + ' at ' + clock(r.position) + '</span>' +
+        '<span class="badge">host ' + esc(r.host === me ? 'you' : r.host) + '</span>' +
+        r.members.map(m => '<span class="badge">' + esc(m.name) + (m.buffering ? ' ⏳' : '') + '</span>').join('') + '</div></div>' +
+        '<a class="join" href="watch/' + encodeURIComponent(r.id) + '">Join</a></div></div>').join('')
       const conv = data.conversions
       document.getElementById('conversions').textContent = conv && conv.limit
         ? 'Stereo conversions ' + conv.active.length + ' / ' + conv.limit

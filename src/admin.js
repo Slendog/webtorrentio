@@ -10,6 +10,7 @@ import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, setLim
 import { forceRemove, status } from './torrent.js'
 import { commands, fatal } from './runtime.js'
 import { conversionInfo } from './convert.js'
+import { closeRoom, roomStatus } from './rooms.js'
 
 // Admin API for the TUI dashboard, on a Unix socket readable only by the owner. It never
 // listens on a network port, so it is reachable only from this machine (or inside the container).
@@ -41,6 +42,7 @@ export async function startAdmin ({ stop }) {
     statePath,
     status: status(null),
     conversions: conversionInfo(),
+    rooms: roomStatus(),
     users: listUsers(),
     limits: LIMITS.map((l, i) => ({ key: l.key, n: i + 1, label: l.label, unit: l.unit, zero: l.zero, value: limitValue(l), display: formatLimit(l) })),
     logs: logsSince(Number(req.query.since) || 0)
@@ -61,7 +63,10 @@ export async function startAdmin ({ stop }) {
     if (!forceRemove(req.params.infoHash)) throw new Error('No such torrent')
   }))
   // `by` says who asked: "dashboard" (key s) or "npm stop". It ends up in the log.
-  app.post('/shutdown', (req, res) => {
+  app.delete('/rooms/:id', handle(req => {
+    if (!closeRoom(req.params.id, 'closed from the dashboard')) throw new Error('No such room')
+  }))
+    app.post('/shutdown', (req, res) => {
     res.json({ ok: true })
     setTimeout(() => stop(`requested by ${String(req.body?.by || 'admin socket').slice(0, 40)}`), 100)
   })
