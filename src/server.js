@@ -127,7 +127,7 @@ configurable.get('/together/stream/:type/:id.json', async (req, res) => {
   const { type, id } = req.params
   if (!togetherManifest.types.includes(type) || !VALID_ID.test(id)) return res.json({ streams: [] })
   if (streamRateExceeded(req.user)) return res.status(429).json({ streams: [] })
-  res.json(await togetherResponse(type, id, req.userConfig, config.publicUrl + userBase(req)))
+  res.json(await togetherResponse(type, id, req.userConfig, config.publicUrl + userBase(req), req.user))
 })
 
 // ---- All routes of one user

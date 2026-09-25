@@ -5,7 +5,7 @@ import { formatBytes, parseTags, TRACKERS } from './parse.js'
 import { rememberScraped, rememberStreamContext } from './registry.js'
 import { knownFile, prefetch } from './torrent.js'
 import { conversionAvailable } from './convert.js'
-import { roomsAvailable } from './rooms.js'
+import { hostedRoom, roomsAvailable, roomUnavailable } from './rooms.js'
 import { resolveScraperKeys, SCRAPER_KEYS, scrapeAll } from './scrapers/index.js'
 
 export const manifest = {
@@ -194,7 +194,7 @@ export const togetherManifest = {
 // Results offered for a room: the best by peer count.
 const TOGETHER_RESULTS = 5
 
-export async function togetherResponse (type, id, userConfig = {}, watchBase) {
+export async function togetherResponse (type, id, userConfig = {}, watchBase, user) {
   if (!roomsAvailable()) {
     return {
       streams: [{
@@ -209,6 +209,28 @@ export async function togetherResponse (type, id, userConfig = {}, watchBase) {
   if (!scraperKeys.length) return { streams: [], cacheMaxAge: 60 }
   try {
     const { query, torrents } = await findTorrents(type, id, scraperKeys)
+    // No free room: say so instead of offering entries that would fail. A room this user
+    // already hosts for one of the results stays reachable.
+    const full = roomUnavailable()
+    if (full) {
+      const own = torrents.map(t => ({ t, room: hostedRoom(user, t.infoHash, query.season, query.episode) })).filter(x => x.room)
+      return {
+        streams: [
+          ...own.map(({ t, room }) => ({
+            name: label('Together', t),
+            title: `${describe(t)}\n👥 Back to your open room`,
+            externalUrl: `${watchBase}/watch/${room.id}`
+          })),
+          {
+            name: 'Together\nno room',
+            title: `No watch-together room available right now.\n${full}\nOpen this to see the open rooms and join one, or try again later.`,
+            externalUrl: `${watchBase}/dashboard`
+          }
+        ],
+        // Look again soon: a room may free up.
+        cacheMaxAge: 30
+      }
+    }
     const streams = torrents.slice(0, TOGETHER_RESULTS).map(t => {
       const params = new URLSearchParams({ h: t.infoHash, i: 'auto', type: query.type, id })
       if (query.type === 'series') { params.set('s', query.season); params.set('e', query.episode) }

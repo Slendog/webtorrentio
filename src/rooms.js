@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { config } from './config.js'
-import { conversionAvailable, endSharedSession } from './convert.js'
+import { activeConversions, conversionAvailable, endSharedSession } from './convert.js'
 import { oneLine } from './logbuffer.js'
 
 // Watch together: rooms whose members play the same file in a browser page (watch-page.js),
@@ -35,6 +35,18 @@ const rooms = new Map() // id -> room
 export const roomsAvailable = () => config.maxRooms > 0 && conversionAvailable()
 
 export const getRoom = id => rooms.get(id) || null
+
+// Whether a new room can start now: a free room slot, and a free audio conversion for it.
+// Returns null when it can, else the reason.
+export function roomUnavailable () {
+  if (rooms.size >= config.maxRooms) return `All rooms are in use (limit ${config.maxRooms}).`
+  if (activeConversions() >= config.audioConversions) return `All audio conversions are in use (limit ${config.audioConversions}).`
+  return null
+}
+
+// The open room this user hosts for a torrent (and episode), if any.
+export const hostedRoom = (host, infoHash, season, episode) =>
+  [...rooms.values()].find(r => r.host === host && r.infoHash === infoHash && r.season === season && r.episode === episode) || null
 
 export function createRoom ({ host, infoHash, fileIdx, season, episode, type, stremioId, name }) {
   if (!conversionAvailable()) throw new RoomError('Watch together needs the stereo audio conversion (AUDIO_CONVERSIONS) to be on.', 503)

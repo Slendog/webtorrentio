@@ -252,7 +252,10 @@ installed from there).
 
 **Start a room:** in Stremio's stream list, the WebTorrent Together section has a
 **Together** entry for the five results with the most peers. It opens the browser, creates a
-room and joins it; clicking it again for the same file returns to the same room. Copy the invite
+room and joins it; clicking it again for the same file returns to the same room.
+When all rooms or all audio conversions are in use, the section shows a single **no room**
+entry instead, which says why and opens the dashboard, where the open rooms can be joined. A
+room you host stays listed as "Back to your open room". Copy the invite
 link from the page (`https://<server>/watch/<room>`) and send it to the others.
 
 **Join:** open the invite link. The first time, the page asks for your own install link (the
