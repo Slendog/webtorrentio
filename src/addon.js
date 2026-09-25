@@ -56,7 +56,7 @@ function describe (t) {
   ].join('\n')
 }
 
-function toStreams (t, query, playBase, mode, watchBase, rank) {
+function toStreams (t, query, playBase, mode) {
   const streams = []
   const bingeGroup = `webtorrent-${t.quality}`
   // Known once the torrent's file list is (running or cached): helps Stremio match subtitles.
@@ -80,17 +80,6 @@ function toStreams (t, query, playBase, mode, watchBase, rank) {
         behaviorHints: { bingeGroup: `webtorrent-stereo-${t.quality}`, notWebReady: true }
       })
     }
-    // Watch together in the browser (rooms.js), for the best few results only.
-    if (watchBase && rank < WATCH_TOGETHER_RESULTS && roomsAvailable()) {
-      const id = query.type === 'series' ? `${query.imdbId}:${query.season}:${query.episode}` : query.imdbId
-      const params = new URLSearchParams({ h: t.infoHash, i: 'auto', type: query.type, id })
-      if (query.type === 'series') { params.set('s', query.season); params.set('e', query.episode) }
-      streams.push({
-        name: label('Together', t),
-        title: `${title}\n👥 Opens a watch-together room in the browser, to share with others`,
-        externalUrl: `${watchBase}/watch/new?${params}`
-      })
-    }
   }
 
   // Stremio's native engine picks the largest file when fileIdx is absent, which is wrong
@@ -108,9 +97,6 @@ function toStreams (t, query, playBase, mode, watchBase, rank) {
 }
 
 export const STREAM_MODES = ['webtorrent', 'native', 'both']
-
-// Results that get a "Together" entry.
-const WATCH_TOGETHER_RESULTS = 3
 
 // Per-install settings from the Configure page, stored base64url-encoded JSON in the addon URL:
 // { url: "https://server", scrapers: ["yts", "tpb"], mode: "webtorrent" }.
@@ -152,7 +138,7 @@ export async function findTorrents (type, id, scraperKeys) {
 
 // Stremio stream response. playBase is the URL prefix of /play links, including the
 // user's access token, so every user gets links that only work for them.
-export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl, user, watchBase) {
+export async function streamResponse (type, id, playBase, userConfig = {}, configureUrl, user) {
   const scraperKeys = resolveScraperKeys(userConfig.scrapers || config.scrapers)
   // Indexes are off by default. Show one entry that explains it instead of an empty list.
   if (!scraperKeys.length) {
@@ -180,9 +166,61 @@ export async function streamResponse (type, id, playBase, userConfig = {}, confi
       })
     }
     // Short client cache: peer counts go stale fast, and a long cache hides addon updates.
-    return { streams: torrents.flatMap((t, i) => toStreams(t, query, playBase, mode, watchBase, i)), cacheMaxAge: 5 * 60 }
+    return { streams: torrents.flatMap(t => toStreams(t, query, playBase, mode)), cacheMaxAge: 5 * 60 }
   } catch (err) {
     console.error(`[stream] ${type} ${id}: ${err.message}`)
+    return { streams: [] }
+  }
+}
+
+// ---- Second addon: watch together (rooms.js)
+//
+// Its own manifest, so the room entries live in their own section of Stremio's stream list
+// instead of mixing with the normal streams. It uses the same search (and cache) as the main
+// addon, and each entry opens a room in the browser.
+
+export const togetherManifest = {
+  id: 'community.webtorrent.together',
+  version: '1.0.0',
+  name: 'WebTorrent Together',
+  description: 'Watch a torrent together with friends in the browser, in sync. Companion of the WebTorrent Scraper addon on the same server.',
+  resources: ['stream'],
+  types: ['movie', 'series'],
+  idPrefixes: ['tt'],
+  catalogs: [],
+  behaviorHints: { configurable: false, configurationRequired: false }
+}
+
+// Results offered for a room: the best by peer count.
+const TOGETHER_RESULTS = 5
+
+export async function togetherResponse (type, id, userConfig = {}, watchBase) {
+  if (!roomsAvailable()) {
+    return {
+      streams: [{
+        name: 'Together\noff',
+        title: 'Watch together is turned off on this server.\nIt needs AUDIO_CONVERSIONS and MAX_ROOMS above 0.',
+        externalUrl: `${watchBase}/`
+      }],
+      cacheMaxAge: 60
+    }
+  }
+  const scraperKeys = resolveScraperKeys(userConfig.scrapers || config.scrapers)
+  if (!scraperKeys.length) return { streams: [], cacheMaxAge: 60 }
+  try {
+    const { query, torrents } = await findTorrents(type, id, scraperKeys)
+    const streams = torrents.slice(0, TOGETHER_RESULTS).map(t => {
+      const params = new URLSearchParams({ h: t.infoHash, i: 'auto', type: query.type, id })
+      if (query.type === 'series') { params.set('s', query.season); params.set('e', query.episode) }
+      return {
+        name: label('Together', t),
+        title: `${describe(t)}\n👥 Opens a watch-together room in the browser, to share with others`,
+        externalUrl: `${watchBase}/watch/new?${params}`
+      }
+    })
+    return { streams, cacheMaxAge: 5 * 60 }
+  } catch (err) {
+    console.error(`[together] ${type} ${id}: ${err.message}`)
     return { streams: [] }
   }
 }

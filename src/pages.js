@@ -25,7 +25,7 @@ const scriptJson = v => JSON.stringify(v).replace(/</g, '\\u003c')
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
-export function installPage ({ manifest, manifestUrl, user }) {
+export function installPage ({ manifest, manifestUrl, togetherUrl, user }) {
   // stremio:// links open the Stremio app straight to the install prompt. Stremio always
   // fetches them over HTTPS, so they only work when the manifest URL is an HTTPS URL.
   const stremioUrl = manifestUrl.replace(/^https?:\/\//, 'stremio://')
@@ -38,6 +38,10 @@ export function installPage ({ manifest, manifestUrl, user }) {
     ${https ? '' : '<p class="small">This server has no HTTPS, so the button fails with a TLS error. Use the URL below instead.</p>'}
     <p class="small">Button does nothing? Paste this URL into the Stremio addon search bar:</p>
     <code>${esc(manifestUrl)}</code>
+    ${togetherUrl ? `<h2 style="margin-top:36px">Watch together</h2>
+    <p class="small">A second addon with a "Together" entry per title: it opens a room in the browser where friends watch in sync.</p>
+    <a class="button" href="${esc(togetherUrl.replace(/^https?:\/\//, 'stremio://'))}">Install WebTorrent Together</a>
+    <code>${esc(togetherUrl)}</code>` : ''}
     <p class="small"><a href="configure">Settings</a> &middot; <a href="dashboard">Live dashboard</a></p>`)
 }
 
@@ -49,7 +53,7 @@ export function lockedPage (manifest) {
 
 // Stremio opens <addon base>/configure when the user clicks "Configure". The page builds a
 // manifest URL with the settings encoded in it and offers to install that URL.
-export function configurePage ({ manifest, addonBase, defaults, scraperKeys, modes, current }) {
+export function configurePage ({ manifest, addonBase, defaults, scraperKeys, modes, current, together }) {
   const value = current.url || defaults.url
   const enabled = current.scrapers || defaults.scrapers
   const mode = current.mode || defaults.mode
@@ -72,6 +76,8 @@ export function configurePage ({ manifest, addonBase, defaults, scraperKeys, mod
     <a class="button" id="install" href="#">Install in Stremio</a>
     <p class="small">Or paste this URL into the Stremio addon search bar:</p>
     <code id="manifest"></code>
+    ${together ? `<p class="small" style="margin-top:28px">Watch together uses a second addon. Install it with the same settings:</p>
+    <a class="button" id="installTogether" href="#">Install WebTorrent Together</a>` : ''}
     <script>
       const base = ${scriptJson(addonBase)}
       const defaults = ${scriptJson(defaults)}
@@ -89,6 +95,8 @@ export function configurePage ({ manifest, addonBase, defaults, scraperKeys, mod
         const manifestUrl = base + (json === '{}' ? '' : '/c/' + encoded) + '/manifest.json'
         document.getElementById('manifest').textContent = manifestUrl
         document.getElementById('install').href = manifestUrl.replace(/^https?:\\/\\//, 'stremio://')
+        const together = document.getElementById('installTogether')
+        if (together) together.href = manifestUrl.replace(/\\/manifest\\.json$/, '/together/manifest.json').replace(/^https?:\\/\\//, 'stremio://')
       }
       form.addEventListener('input', update)
       update()

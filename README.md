@@ -244,9 +244,16 @@ in the room can play, pause, seek or change the speed, and everyone follows with
 a second. It needs the [stereo audio conversion](#stereo-audio-conversion) (`AUDIO_CONVERSIONS`),
 which makes the audio playable in every browser.
 
-**Start a room:** in Stremio, the top three results get a **Together** entry. It opens the
-browser, creates a room and joins it. Copy the invite link from the page
-(`https://<server>/watch/<room>`) and send it to the others.
+**Install:** watch together is a second addon, **WebTorrent Together**, so its entries do not
+mix with the normal streams. The install page (`/<token>/`) and the Configure page have an
+**Install WebTorrent Together** button; the manifest is `/<token>/together/manifest.json`. It
+uses the same searches as the main addon (and the index choice from the Configure page when
+installed from there).
+
+**Start a room:** in Stremio's stream list, the WebTorrent Together section has a
+**Together** entry for the five results with the most peers. It opens the browser, creates a
+room and joins it; clicking it again for the same file returns to the same room. Copy the invite
+link from the page (`https://<server>/watch/<room>`) and send it to the others.
 
 **Join:** open the invite link. The first time, the page asks for your own install link (the
 one you use in Stremio); the browser remembers it for later rooms. Invite links contain no
@@ -550,6 +557,7 @@ Under `/<token>` when users exist.
 | `GET /stream/:type/:id.json` | Stremio stream list. |
 | `GET /play/:infoHash/:fileIdx` | Video over HTTP with Range support; `fileIdx` is a number or `auto`. |
 | `GET /hls/:infoHash/:fileIdx/index.m3u8` | The same video as HLS with stereo audio (when the conversion is on); segments are `<n>.ts` next to it. |
+| `GET /together/manifest.json` | Manifest of the WebTorrent Together companion addon; its stream lists are `/together/stream/:type/:id.json`. |
 | `GET /watch/new?h=&i=&type=&id=` | Create a watch-together room and open it. |
 | `GET /watch/:room` | Room page. Without a token (invite link) a page that asks for the member's install link. |
 | `GET /watch/:room/events` | Room state as Server-Sent Events; `POST /watch/:room/action` and `/report` send actions and playback reports. |

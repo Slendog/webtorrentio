@@ -2,7 +2,7 @@
 import { oneLine } from './logbuffer.js'
 import https from 'node:https'
 import express from 'express'
-import { manifest, parseUserConfig, STREAM_MODES, streamResponse } from './addon.js'
+import { manifest, parseUserConfig, STREAM_MODES, streamResponse, togetherManifest, togetherResponse } from './addon.js'
 import { config } from './config.js'
 import { dashboardHtml } from './dashboard.js'
 import { configurePage, installPage, lockedPage } from './pages.js'
@@ -11,7 +11,7 @@ import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
 import { conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
-import { act, closeAllRooms, closeRoom, createRoom, getRoom, join, report, roomStatus } from './rooms.js'
+import { act, closeAllRooms, closeRoom, createRoom, getRoom, join, report, roomsAvailable, roomStatus } from './rooms.js'
 import { subtitleList, subtitleVtt } from './subtitles.js'
 import { joinPage, WATCH_CSP, watchPage } from './watch-page.js'
 import path from 'node:path'
@@ -104,7 +104,8 @@ configurable.get('/configure', (req, res) => res.type('html').send(configurePage
   defaults: { url: config.streamUrl, scrapers: resolveScraperKeys(), mode: config.mode },
   scraperKeys: SCRAPER_KEYS,
   modes: STREAM_MODES,
-  current: req.userConfig
+  current: req.userConfig,
+  together: roomsAvailable()
 })))
 
 configurable.get('/stream/:type/:id.json', async (req, res) => {
@@ -115,7 +116,18 @@ configurable.get('/stream/:type/:id.json', async (req, res) => {
     return res.status(429).json({ streams: [] })
   }
   const playBase = (req.userConfig.url || config.streamUrl) + userBase(req)
-  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`, req.user, config.publicUrl + userBase(req)))
+  res.json(await streamResponse(type, id, playBase, req.userConfig, `${config.publicUrl}${userBase(req)}/configure`, req.user))
+})
+
+// The watch-together companion addon: /together/manifest.json (also under /c/<settings>/, so
+// it can use the same index choice as the main addon).
+configurable.get('/together/manifest.json', (req, res) => res.json(togetherManifest))
+
+configurable.get('/together/stream/:type/:id.json', async (req, res) => {
+  const { type, id } = req.params
+  if (!togetherManifest.types.includes(type) || !VALID_ID.test(id)) return res.json({ streams: [] })
+  if (streamRateExceeded(req.user)) return res.status(429).json({ streams: [] })
+  res.json(await togetherResponse(type, id, req.userConfig, config.publicUrl + userBase(req)))
 })
 
 // ---- All routes of one user
@@ -141,6 +153,7 @@ router.get('/', (req, res) => {
   res.type('html').send(installPage({
     manifest,
     manifestUrl: `${config.publicUrl}${userBase(req)}/manifest.json`,
+    togetherUrl: roomsAvailable() ? `${config.publicUrl}${userBase(req)}/together/manifest.json` : null,
     user: req.userBase ? req.user : null
   }))
 })
