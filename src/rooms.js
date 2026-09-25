@@ -143,6 +143,9 @@ export function join (room, { user, clientId, name, res }) {
   if (!room.members.has(clientId) && room.members.size >= MAX_MEMBERS) throw new RoomError(`Room is full (${MAX_MEMBERS} people).`, 429)
   const old = room.members.get(clientId)
   if (old) old.res.end()
+  // A reconnect (network hiccup, EventSource retry) is not a new join.
+  const returning = old || room.leaving?.has(clientId)
+  if (room.leaving?.has(clientId)) { clearTimeout(room.leaving.get(clientId)); room.leaving.delete(clientId) }
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-store',
@@ -162,11 +165,18 @@ export function join (room, { user, clientId, name, res }) {
     joinedAt: Date.now()
   }
   room.members.set(clientId, member)
+  if (!returning) console.log(`[room] ${member.name}${member.name.toLowerCase() !== user.toLowerCase() ? ` (${user})` : ''} joined room ${room.id} (${oneLine(room.name || room.infoHash.slice(0, 8))}), ${room.members.size} in the room`)
   const ping = setInterval(() => res.write(': ping\n\n'), PING_MS)
   res.on('close', () => {
     clearInterval(ping)
     if (room.members.get(clientId) !== member) return
     room.members.delete(clientId)
+    room.leaving ??= new Map()
+    room.leaving.set(clientId, setTimeout(() => {
+      room.leaving.delete(clientId)
+      if (room.members.has(clientId) || !rooms.has(room.id)) return
+      console.log(`[room] ${member.name}${member.name.toLowerCase() !== user.toLowerCase() ? ` (${user})` : ''} left room ${room.id} after ${Math.round((Date.now() - member.joinedAt) / 60_000)} min, ${room.members.size} in the room`)
+    }, 10_000).unref())
     if (!room.members.size) {
       // Nobody left: stop the clock, so the next person continues where the last one left.
       room.emptySince = Date.now()

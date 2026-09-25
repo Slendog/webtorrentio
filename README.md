@@ -344,6 +344,26 @@ the network), so you can close and reopen it while the server keeps running.
 | `b`, `q`, Ctrl+C | Close the dashboard; the server keeps running. |
 | `s` | Stop the server (asks first). |
 
+### Activity log
+
+The log (TUI, `state/server.log`, or `docker compose logs addon`) records who watches what, with
+a timestamp on every line:
+
+```
+[watch] alice started Reacher.S01E08.1080p.BluRay.x265-RARBG.mp4 via WebTorrent (1080p) [1fab1b56]
+[watch] alice stopped Reacher.S01E08.1080p.BluRay.x265-RARBG.mp4 after 47 min, 812 MB read via WebTorrent [1fab1b56]
+[room] alice opened room A31a0JIGyy for Reacher.S01.1080p.BluRay.x265
+[room] Bobby (bob) joined room A31a0JIGyy (Reacher.S01.1080p.BluRay.x265), 2 in the room
+[room] Bobby (bob) left room A31a0JIGyy after 52 min, 1 in the room
+```
+
+- A watch starts once a user has read 8 MB of a file, so a player's short probes do not
+  count, and it ends 60 seconds after their last connection to the file closed. Seeks and
+  reconnects stay one watch.
+- `via` is `WebTorrent` (the normal entry), `Stereo` (the audio conversion) or `room <id>`. A
+  room's stream is read once, by the host, so members appear as `[room] ... joined`/`left` lines.
+- The detailed `[play]` line per HTTP request stays, for troubleshooting slow starts.
+
 ### Reading the numbers
 
 - **Connections, not viewers.** Players often open two or three connections at the start, for

@@ -80,7 +80,8 @@ const input = http.createServer((req, res) => {
     ...(m ? { 'Content-Range': `bytes ${start}-${end}/${total}` } : {})
   })
   if (req.method === 'HEAD') return res.end()
-  const stream = openStream(session.entry, session.file, start, end, session.user)
+  const via = session.key.startsWith('room\n') ? `room ${session.key.slice(5)}` : 'Stereo'
+  const stream = openStream(session.entry, session.file, start, end, session.user, { via })
   stream.on('error', () => res.destroy())
   res.on('close', () => stream.destroy())
   stream.pipe(res)

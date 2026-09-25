@@ -279,7 +279,7 @@ router.get('/play/:infoHash/:fileIdx', async (req, res) => {
   const dataAt = Date.now()
   const rangeText = requested
 
-  const stream = openStream(entry, file, start, end, req.user, { season, episode })
+  const stream = openStream(entry, file, start, end, req.user, { season, episode, via: 'WebTorrent' })
   stream.on('error', err => {
     console.warn(`[http] stream error ${infoHash}: ${err.message}`)
     res.destroy(err)

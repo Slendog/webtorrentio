@@ -426,11 +426,57 @@ class SliceStream extends Readable {
   }
 }
 
-export function openStream (entry, file, start, end, user, { season, episode } = {}) {
+// ---- Activity log: one line when someone starts watching a file, one when they stop.
+//
+// Players open many short connections (probes, seeks), so a "watch" is one user and one file
+// across all their connections: it starts once they have read WATCHING_MIN_BYTES (a probe
+// stays below that) and ends WATCH_END_MS after their last connection to the file closed.
+// `via` says how: "WebTorrent" (/play), "Stereo" (conversion) or "room <id>".
+
+const WATCH_END_MS = 60_000
+const watches = new Map() // user \n infoHash \n file path -> watch
+
+const minutes = ms => ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`
+
+function trackWatch (entry, file, user, via, stream, start) {
+  const key = `${user}\n${entry.infoHash}\n${file.path}`
+  let w = watches.get(key)
+  if (!w) {
+    w = { user, via, open: 0, bytes: 0, startedAt: null, firstPos: start, endTimer: null }
+    watches.set(key, w)
+  }
+  clearTimeout(w.endTimer)
+  w.open++
+  stream.on('data', buf => {
+    w.bytes += buf.length
+    if (!w.startedAt && w.bytes >= WATCHING_MIN_BYTES) {
+      w.startedAt = Date.now()
+      const scraped = getScraped(entry.infoHash)
+      const at = w.firstPos > file.length * 0.01 ? ` at ${(w.firstPos / file.length * 100).toFixed(0)}%` : ''
+      console.log(`[watch] ${user} started ${oneLine(file.name)}${at} via ${w.via}` +
+        `${scraped?.quality ? ` (${scraped.quality})` : ''} [${entry.infoHash.slice(0, 8)}]`)
+    }
+  })
+  stream.once('close', () => {
+    if (--w.open > 0) return
+    w.endTimer = setTimeout(() => {
+      if (w.open > 0) return
+      watches.delete(key)
+      if (!w.startedAt) return
+      const took = Date.now() - WATCH_END_MS - w.startedAt
+      console.log(`[watch] ${user} stopped ${oneLine(file.name)} after ${minutes(Math.max(0, took))}, ` +
+        `${(w.bytes / 1024 ** 2).toFixed(0)} MB read via ${w.via} [${entry.infoHash.slice(0, 8)}]`)
+    }, WATCH_END_MS)
+    w.endTimer.unref()
+  })
+}
+
+export function openStream (entry, file, start, end, user, { season, episode, via } = {}) {
   const reader = { file, user, season, episode, pos: start, sliceEnd: start, bytesRead: 0, openedAt: Date.now() }
   entry.played.add(file.path)
   entry.readers.add(reader)
   const stream = new SliceStream(entry, reader, start, end)
+  if (via) trackWatch(entry, file, user, via, stream, start)
 
   entry.connections++
   bump(entry.files, file.path, 1)
