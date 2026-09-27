@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { config } from './config.js'
 import { activeConversions, conversionAvailable, endSharedSession } from './convert.js'
 import { oneLine } from './logbuffer.js'
+import { prettyTitle } from './names.js'
 
 // Watch together: rooms whose members play the same file in a browser page (watch-page.js),
 // kept at the same position by the server.
@@ -284,6 +285,7 @@ export function roomStatus () {
     id: r.id,
     host: r.host,
     name: r.name,
+    title: r.name ? prettyTitle(r.name) : null,
     infoHash: r.infoHash,
     playing: r.state.playing,
     waiting: r.resumeWhenReady,

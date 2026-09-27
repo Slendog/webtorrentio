@@ -2,20 +2,12 @@ import { config } from './config.js'
 import { roomStatus } from './rooms.js'
 import { status } from './torrent.js'
 import { page } from './ui.js'
+import { prettyTitle as title } from './names.js'
 
 // Read-only page without a token (PUBLIC_DASHBOARD=on): who is watching what right now, and
 // the open watch-together rooms. It shows names, never tokens, links or controls.
 
 const clean = s => String(s ?? '').replace(/[\x00-\x1f\x7f-\x9f]/g, '')
-
-// Release names are long; show the title part: "Mayday.2026.1080p.BluRay…mp4" -> "Mayday 2026".
-function title (name) {
-  const base = clean(name).replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[._]+/g, ' ')
-  const cut = base.search(/\b(19|20)\d{2}\b|\bS\d{1,2}E\d{1,3}\b|\b(480|576|720|1080|2160)p\b/i)
-  if (cut <= 0) return base.trim()
-  const m = base.slice(cut).match(/^((19|20)\d{2}|S\d{1,2}E\d{1,3})/i)
-  return (base.slice(0, cut) + (m ? m[0] : '')).trim()
-}
 
 export function publicStatus () {
   const st = status(null)
@@ -35,7 +27,7 @@ export function publicStatus () {
     }
   }
   const rooms = roomStatus().map(r => ({
-    title: title(r.name || 'Watch-together room'),
+    title: r.title || 'Watch-together room',
     playing: r.playing,
     waiting: r.waiting,
     positionSec: r.position,

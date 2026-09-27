@@ -464,6 +464,8 @@ watch.get('/:room/info', async (req, res) => {
   } finally {
     clearTimeout(timer)
   }
+  // The file name is known now; rooms opened without a search result get their title from it.
+  room.name ||= session.file?.name || null
   if (!room.subtitles) {
     room.subtitles = room.stremioId && room.type
       ? await subtitleList(room.type, room.stremioId).catch(err => { console.warn(`[room] subtitles: ${oneLine(err.message)}`); return [] })

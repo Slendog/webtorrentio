@@ -11,6 +11,7 @@ import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
 import { fatal } from './runtime.js'
 import { isAdmin, onChange } from './settings.js'
+import { prettyTitle } from './names.js'
 
 const READY_TIMEOUT_MS = 60_000
 
@@ -724,6 +725,8 @@ function torrentStats (entry, user) {
   return {
     infoHash,
     name: torrent.name || getScraped(infoHash)?.name || infoHash,
+    // Short title for people: from the file being played, else the torrent name.
+    title: prettyTitle(playing[0]?.name || torrent.name || getScraped(infoHash)?.name || ''),
     ready: Boolean(torrent.ready),
     connections,
     prefetched: entry.prefetch,
