@@ -87,6 +87,17 @@ export function addUser (name) {
   return token
 }
 
+// New token for a user added at runtime; the old one stops working at once.
+export function rotateToken (name) {
+  const u = users.get(name)
+  if (!u) throw new Error(`No user ${name}`)
+  if (u.source === 'env') throw new Error(`${name} comes from ACCESS_TOKENS; change the token there and restart`)
+  u.token = crypto.randomBytes(24).toString('base64url')
+  save()
+  changed()
+  return u.token
+}
+
 export function removeUser (name) {
   const u = users.get(name)
   if (!u) throw new Error(`No user ${name}`)

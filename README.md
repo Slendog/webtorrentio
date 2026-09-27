@@ -118,11 +118,43 @@ and install from that address. On a public
 server, use HTTPS with a domain (see [Docker](#docker-linux-server)). Each install can also
 override the stream link address with Stremio's **Configure** button.
 
+## Command line
+
+The same entry point manages a running server over its admin socket, like the TUI dashboard:
+
+| Where | Prefix |
+|---|---|
+| `npm start` on this machine | `node src/index.js` |
+| Docker | `docker compose exec addon webtorrentio` |
+| Kubernetes | `kubectl -n webtorrentio exec deploy/webtorrentio -- webtorrentio` |
+
+| Command | What it does |
+|---|---|
+| `help` | All commands. |
+| `status` | Uptime, speeds, torrents, disk, stereo conversions, rooms, users. |
+| `users` | List users. |
+| `users add <name>` | Add a user and print their install links. |
+| `users remove <name>` | Remove a user; their links stop working at once. |
+| `users token <name>` | New token for a user (the old links stop working); prints the new links. |
+| `links [name]` | Install page, `stremio://` link, manifest, Together manifest, Configure and dashboard links of all users or one. |
+| `limits` / `limits set <number or key> <value>` | Show limits, or change one (saved like changes in the TUI), e.g. `limits set 7 3`. |
+| `torrents` / `torrents remove <number or hash>` | Running torrents; remove one even while people watch. |
+| `rooms` / `rooms close <number or id>` | Watch-together rooms. |
+| `logs [-n 50] [--day YYYY-MM-DD] [--grep text] [--activity] [-f]` | Lines from the log files; `-f` follows new lines, `--activity` shows only `[watch]` and `[room]` lines. `logs days` lists the files. |
+| `token` | A random token for `ACCESS_TOKENS` (needs no running server). |
+| `dashboard`, `background`, `stop` | TUI, start in the background, stop (in a container, stop the container instead). |
+
+Every command takes `--json` for scripts. Users from `ACCESS_TOKENS` are changed in the
+environment, not here. User and limit changes are written to the log (`[admin]` lines, without
+tokens).
+
 ## Users and access tokens
 
 Without users, anyone who can reach the server can use it. Add users before making the server
 reachable from other devices or the internet.
 
+- On the command line (see [Command line](#command-line)): `users add alice` prints her
+  install links; `links alice` shows them again.
 - In the TUI dashboard: press `a`. The token and install link are shown once; press `t` to see
   tokens later.
 - Or in the environment: `npm run token` prints a random token, then
@@ -417,10 +449,11 @@ Two compose files:
 
 ```sh
 cp .env.example .env
-docker compose run --rm addon node scripts/token.js    # once per user, paste into ACCESS_TOKENS
+docker compose run --rm addon webtorrentio token      # once per user, paste into ACCESS_TOKENS
 # edit .env: PUBLIC_URL=http://<server-ip>:7000, ACCESS_TOKENS, SCRAPERS, limits
 docker compose up -d --build
-docker compose exec addon node src/index.js dashboard  # TUI; press t for install links, b to leave
+docker compose exec addon webtorrentio links          # install links of every user
+docker compose exec addon webtorrentio dashboard      # TUI; press t for install links, b to leave
 ```
 
 **HTTPS with Let's Encrypt:**
@@ -504,7 +537,8 @@ kubectl create namespace webtorrentio
 kubectl -n webtorrentio create secret generic webtorrentio-secrets \
   --from-literal=ACCESS_TOKENS="alice:$(openssl rand -hex 24),bob:$(openssl rand -hex 24)"
 kubectl apply -k k8s/local
-kubectl -n webtorrentio exec -it deploy/webtorrentio -- node src/index.js dashboard   # press t for install links
+kubectl -n webtorrentio exec deploy/webtorrentio -- webtorrentio links   # install links
+kubectl -n webtorrentio exec -it deploy/webtorrentio -- webtorrentio dashboard
 ```
 
 Settings go into `literals` in your `kustomization.yaml` (any variable from

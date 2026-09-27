@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "description": "Stremio addon that searches public torrent indexes and streams results through WebTorrent",
   "main": "src/index.js",
+  "bin": {
+    "webtorrentio": "src/index.js"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "certs": "mkdir -p certs && mkcert -cert-file certs/cert.pem -key-file certs/key.pem 127.0.0.1 localhost ::1",
     "stop": "node scripts/stop.js",
-    "token": "node scripts/token.js",
+    "token": "node src/index.js token",
     "dashboard": "node src/index.js dashboard",
     "background": "node src/index.js background"
   },

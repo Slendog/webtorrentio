@@ -6,11 +6,11 @@ import express from 'express'
 import { config } from './config.js'
 import { logDays, logDir, logsSince, readLogDay } from './logbuffer.js'
 import { socketPath } from './paths.js'
-import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, setLimit, statePath } from './settings.js'
+import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, rotateToken, setLimit, statePath } from './settings.js'
 import { forceRemove, status } from './torrent.js'
 import { commands, fatal } from './runtime.js'
 import { conversionInfo } from './convert.js'
-import { closeRoom, roomStatus } from './rooms.js'
+import { closeRoom, roomsAvailable, roomStatus } from './rooms.js'
 
 // Admin API for the TUI dashboard, on a Unix socket readable only by the owner. It never
 // listens on a network port, so it is reachable only from this machine (or inside the container).
@@ -45,8 +45,31 @@ export async function startAdmin ({ stop }) {
     rooms: roomStatus(),
     users: listUsers(),
     limits: LIMITS.map((l, i) => ({ key: l.key, n: i + 1, label: l.label, unit: l.unit, zero: l.zero, value: limitValue(l), display: formatLimit(l) })),
-    logs: logsSince(Number(req.query.since) || 0)
+    logs: req.query.logs === '0' ? { lines: [], seq: logsSince(Infinity).seq } : logsSince(Number(req.query.since) || 0)
   }))
+
+  // Install and page links of every user (or one), for the command line.
+  app.get('/links', (req, res) => {
+    const base = config.publicUrl
+    const links = (listUsers().length ? listUsers() : [{ user: null, source: 'open', token: null }])
+      .filter(u => !req.query.user || u.user === req.query.user)
+      .map(u => {
+        const b = u.token ? `${base}/${u.token}` : base
+        return {
+          user: u.user,
+          source: u.source,
+          token: u.token,
+          installPage: `${b}/`,
+          manifest: `${b}/manifest.json`,
+          stremio: `${b}/manifest.json`.replace(/^https?:\/\//, 'stremio://'),
+          together: roomsAvailable() ? `${b}/together/manifest.json` : null,
+          configure: `${b}/configure`,
+          dashboard: `${b}/dashboard`
+        }
+      })
+    if (req.query.user && !links.length) return res.status(404).json({ error: `No user ${req.query.user}` })
+    res.json({ links, https: base.startsWith('https://') })
+  })
 
   const handle = fn => (req, res) => {
     try {
@@ -56,9 +79,11 @@ export async function startAdmin ({ stop }) {
     }
   }
 
-  app.post('/users', handle(req => ({ token: addUser(req.body?.name) })))
-  app.delete('/users/:name', handle(req => removeUser(req.params.name)))
-  app.put('/limits/:key', handle(req => setLimit(req.params.key, req.body?.value)))
+  // Changes are logged (without tokens), so the log files keep a record of who was given access.
+  app.post('/users', handle(req => { const token = addUser(req.body?.name); console.log(`[admin] user ${req.body.name} added`); return { token } }))
+  app.delete('/users/:name', handle(req => { removeUser(req.params.name); console.log(`[admin] user ${req.params.name} removed`) }))
+  app.post('/users/:name/token', handle(req => { const token = rotateToken(req.params.name); console.log(`[admin] new token for user ${req.params.name}`); return { token } }))
+  app.put('/limits/:key', handle(req => { setLimit(req.params.key, req.body?.value); console.log(`[admin] limit ${req.params.key} set to ${req.body?.value}`) }))
   app.delete('/torrents/:infoHash', handle(req => {
     if (!forceRemove(req.params.infoHash)) throw new Error('No such torrent')
   }))

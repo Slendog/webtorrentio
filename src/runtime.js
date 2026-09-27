@@ -5,15 +5,24 @@
 export const inDocker = process.env.WEBTORRENTIO_DOCKER === '1'
 const inKubernetes = inDocker && Boolean(process.env.KUBERNETES_SERVICE_HOST)
 
+// `cli` is the prefix for command-line management (src/cli.js): `<cli> users`, `<cli> links`.
 export const commands = inKubernetes
   ? {
-      dashboard: 'kubectl -n webtorrentio exec -it deploy/webtorrentio -- node src/index.js dashboard',
+      cli: 'kubectl -n webtorrentio exec deploy/webtorrentio -- webtorrentio',
+      dashboard: 'kubectl -n webtorrentio exec -it deploy/webtorrentio -- webtorrentio dashboard',
+      start: 'kubectl -n webtorrentio scale deploy/webtorrentio --replicas=1',
       stop: 'kubectl -n webtorrentio scale deploy/webtorrentio --replicas=0',
       token: 'openssl rand -hex 24'
     }
   : inDocker
-    ? { dashboard: 'docker compose exec addon node src/index.js dashboard', stop: 'docker compose stop addon', token: 'docker compose run --rm addon node scripts/token.js' }
-    : { dashboard: 'npm start dashboard', stop: 'npm stop', token: 'npm run token' }
+    ? {
+        cli: 'docker compose exec addon webtorrentio',
+        dashboard: 'docker compose exec addon webtorrentio dashboard',
+        start: 'docker compose up -d',
+        stop: 'docker compose stop addon',
+        token: 'docker compose run --rm addon webtorrentio token'
+      }
+    : { cli: 'node src/index.js', dashboard: 'npm start dashboard', start: 'npm start background', stop: 'npm stop', token: 'npm run token' }
 
 // Stop because of a setup problem (bad configuration, port in use). In Docker the restart
 // policy starts the container again at once, which would repeat the same error several times

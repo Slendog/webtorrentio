@@ -1,13 +1,19 @@
+#!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { serverRunning } from './client.js'
 import { logFile, stateDir } from './paths.js'
+import { isCliCommand, runCli } from './cli.js'
+import { commands, inDocker } from './runtime.js'
 
 // Command line entry point:
 //   node src/index.js              run the server in the foreground
 //   node src/index.js background   start the server detached, logging to state/server.log
 //   node src/index.js dashboard    open the TUI on the running server (starts one if needed)
+//   node src/index.js stop         stop the running server
+//   node src/index.js <command>    manage a running server: users, links, limits, ... (cli.js)
+// In the Docker image the same entry point is on the PATH as `webtorrentio`.
 
 const START_TIMEOUT_MS = 20_000
 
@@ -40,8 +46,9 @@ async function startBackground () {
     if (state) {
       console.log(`Server started in the background (pid ${state.pid}).`)
       console.log(`  Log:       ${logFile}`)
-      console.log('  Dashboard: npm start dashboard')
-      console.log('  Stop:      npm stop')
+      console.log(`  Dashboard: ${commands.dashboard}`)
+      console.log(`  Manage:    ${commands.cli} help`)
+      console.log(`  Stop:      ${commands.stop}`)
       return state
     }
   }
@@ -63,7 +70,16 @@ if (!mode || mode === 'server') {
   }
   const { startTui } = await import('./tui.js')
   await startTui()
+} else if (mode === 'stop') {
+  // In a container the restart policy would start it again: stop the container instead.
+  if (inDocker) {
+    console.error(`Stop the container instead: ${commands.stop}`)
+    process.exit(1)
+  }
+  await import('../scripts/stop.js')
+} else if (isCliCommand(mode)) {
+  await runCli(mode, process.argv.slice(3))
 } else {
-  console.error(`Unknown command "${mode}". Use: npm start [background|dashboard]`)
+  console.error(`Unknown command "${mode}". Commands: ${commands.cli} help`)
   process.exit(1)
 }

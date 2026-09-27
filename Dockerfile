@@ -36,6 +36,8 @@ COPY src ./src
 COPY scripts ./scripts
 
 RUN mkdir -p /data /app/state && chown node:node /data /app/state
+# `webtorrentio <command>` for management: docker compose exec addon webtorrentio users
+RUN ln -s /app/src/index.js /usr/local/bin/webtorrentio && chmod +x /app/src/index.js
 USER node
 VOLUME /data /app/state
 
