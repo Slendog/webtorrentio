@@ -4,7 +4,7 @@ import net from 'node:net'
 import path from 'node:path'
 import express from 'express'
 import { config } from './config.js'
-import { logsSince } from './logbuffer.js'
+import { logDays, logDir, logsSince, readLogDay } from './logbuffer.js'
 import { socketPath } from './paths.js'
 import { addUser, formatLimit, LIMITS, limitValue, listUsers, removeUser, setLimit, statePath } from './settings.js'
 import { forceRemove, status } from './torrent.js'
@@ -62,7 +62,10 @@ export async function startAdmin ({ stop }) {
   app.delete('/torrents/:infoHash', handle(req => {
     if (!forceRemove(req.params.infoHash)) throw new Error('No such torrent')
   }))
-  // `by` says who asked: "dashboard" (key s) or "npm stop". It ends up in the log.
+  // Log files, for the dashboard's log browser.
+  app.get('/logs', (req, res) => res.json({ dir: logDir, days: logDays() }))
+  app.get('/logs/:day', handle(req => ({ lines: readLogDay(req.params.day) })))
+    // `by` says who asked: "dashboard" (key s) or "npm stop". It ends up in the log.
   app.delete('/rooms/:id', handle(req => {
     if (!closeRoom(req.params.id, 'closed from the dashboard')) throw new Error('No such room')
   }))

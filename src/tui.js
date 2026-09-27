@@ -80,6 +80,9 @@ export async function startTui () {
     process.exit(1)
   }
 
+  // In-memory log lines of the pane (the server keeps the same number).
+  const MAX_LOG_LINES = 5000
+
   // ---- Server state, refreshed every second over the admin socket.
   let data = null
   let logSeq = 0
@@ -91,9 +94,19 @@ export async function startTui () {
       const next = await adminRequest('GET', `/state?since=${logSeq}`)
       failures = 0
       logs.push(...next.logs.lines)
-      if (logs.length > 500) logs.splice(0, logs.length - 500)
+      // Scrolled up: keep the same lines in view while new ones arrive below.
+      if (logScroll) logScroll += next.logs.lines.length
+      if (logs.length > MAX_LOG_LINES) logs.splice(0, logs.length - MAX_LOG_LINES)
       logSeq = next.logs.seq
       data = next
+      // Today's file in the log browser: pick up new lines while it shows the newest ones.
+      if (browser && browser.index === 0 && !browser.scroll && Date.now() - browser.loadedAt > 5000) {
+        browser.loadedAt = Date.now()
+        const day = browser.days[0].day
+        adminRequest('GET', `/logs/${day}`).then(({ lines }) => {
+          if (browser?.days[browser.index]?.day === day) { browser.lines = lines; scheduleRender() }
+        }).catch(() => {})
+      }
       scheduleRender()
     } catch (err) {
       if (++failures >= 3) leave(`Lost connection to the server: ${err.message}`)
@@ -101,6 +114,11 @@ export async function startTui () {
   }
 
   // ---- UI state
+  // Log pane: lines scrolled up from the newest (0 = follow new lines).
+  let logScroll = 0
+  let logRowsShown = 10
+  // Full-screen log browser over the daily log files (key l), or null.
+  let browser = null
   let showTokens = false
   let prompt = null // { label, value, onSubmit }
   let message = null // { text, level, sticky }
@@ -130,6 +148,7 @@ export async function startTui () {
 
   function render () {
     if (!data) return
+    if (browser) return renderBrowser()
     const width = out.columns || 100
     const height = out.rows || 30
     const st = data.status
@@ -220,13 +239,15 @@ export async function startTui () {
     } else {
       const color = { info: c.green, warn: c.yellow, error: c.red }[message?.level] || (s => s)
       footer.push(message ? color(message.text) : '')
-      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ` tokens  [1-${data.limits.length}] edit limit  [x] remove torrent  [r] close room  ` +
+      footer.push(c.dim('[a] add user  [d] delete user  [t] ' + (showTokens ? 'hide' : 'show') + ` tokens  [1-${data.limits.length}] edit limit  [x] remove torrent  [r] close room  [l] logs  ` +
         '[b] background (keep server running)  [s] stop server'))
     }
 
     const logRows = Math.max(1, height - lines.length - footer.length - 1)
-    lines.push(section('Log', width))
-    const shown = logs.slice(-logRows + 1)
+    logRowsShown = logRows
+    logScroll = Math.min(logScroll, Math.max(0, logs.length - logRows))
+    lines.push(section(logScroll ? `Log (${logScroll} lines up · ↑↓ PgUp PgDn · End follows · l all logs)` : 'Log (↑ PgUp scroll · l all logs)', width))
+    const shown = logs.slice(Math.max(0, logs.length - logScroll - logRows), logs.length - logScroll)
     for (const l of shown) {
       const text = safe(l.text)
       lines.push(l.level === 'error' ? c.red(text) : l.level === 'warn' ? c.yellow(text) : c.dim(text))
@@ -236,6 +257,71 @@ export async function startTui () {
     lines.push(...footer)
 
     out.write(`${ESC}H` + lines.map(l => fit(l, width)).join('\r\n'))
+  }
+
+  // ---- Log browser: one day's log file, with scrolling, day switching and a text filter.
+  const logColor = l => l.level === 'error' ? c.red : l.level === 'warn' ? c.yellow : /\[(watch|room)\]/.test(l.text) ? c.cyan : (s => s)
+  const localTime = iso => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toTimeString().slice(0, 8) }
+
+  async function openBrowser (dayIndex = 0) {
+    try {
+      const { dir, days } = await adminRequest('GET', '/logs')
+      if (!days.length) return flash(`No log files yet (${dir}).`, 'warn')
+      const i = Math.max(0, Math.min(dayIndex, days.length - 1))
+      const { lines } = await adminRequest('GET', `/logs/${days[i].day}`)
+      browser = { dir, days, index: i, lines, filter: browser?.filter || '', activity: browser?.activity || false, scroll: 0, loadedAt: Date.now() }
+      scheduleRender()
+    } catch (err) {
+      flash(err.message, 'error')
+    }
+  }
+
+  const browserLines = () => {
+    const f = browser.filter.toLowerCase()
+    return browser.lines.filter(l => (!browser.activity || /\[(watch|room)\]/.test(l.text)) && (!f || l.text.toLowerCase().includes(f)))
+  }
+
+  function renderBrowser () {
+    const width = out.columns || 100
+    const height = out.rows || 30
+    const b = browser
+    const list = browserLines()
+    const rows = Math.max(1, height - 3)
+    b.scroll = Math.min(b.scroll, Math.max(0, list.length - rows))
+    const shown = list.slice(Math.max(0, list.length - b.scroll - rows), list.length - b.scroll)
+    const day = b.days[b.index]
+    const lines = [c.inverse(fit(` Log ${day.day}  (day ${b.index + 1} of ${b.days.length}, ${bytes(day.bytes)})  ${list.length} lines` +
+      (b.filter ? `  filter "${safe(b.filter)}"` : '') + (b.activity ? '  activity only' : '') + (b.scroll ? `  ${b.scroll} lines up` : '  newest at the bottom') + `  ${b.dir}`, width))]
+    for (const l of shown) lines.push(logColor(l)(safe(`${localTime(l.at)} ${l.level === 'info' ? '' : l.level.toUpperCase() + ' '}${l.text}`)))
+    while (lines.length < height - 2) lines.push('')
+    lines.length = height - 2
+    if (prompt) lines.push(c.bold(prompt.label) + ' ' + prompt.value + c.inverse(' '))
+    else lines.push(message ? message.text : '')
+    lines.push(c.dim('[↑↓ PgUp PgDn Home End] scroll  [ [ ] ] older / newer day  [/] filter  [w] only watch and room lines  [Esc] back'))
+    out.write(`${ESC}H` + lines.map(l => fit(l, width)).join('\r\n'))
+  }
+
+  function browserKey (str, key) {
+    const b = browser
+    const rows = Math.max(1, (out.rows || 30) - 3)
+    const max = Math.max(0, browserLines().length - rows)
+    switch (key?.name) {
+      case 'up': b.scroll = Math.min(max, b.scroll + 1); return scheduleRender()
+      case 'down': b.scroll = Math.max(0, b.scroll - 1); return scheduleRender()
+      case 'pageup': b.scroll = Math.min(max, b.scroll + rows - 1); return scheduleRender()
+      case 'pagedown': b.scroll = Math.max(0, b.scroll - rows + 1); return scheduleRender()
+      case 'home': b.scroll = max; return scheduleRender()
+      case 'end': b.scroll = 0; return scheduleRender()
+      case 'escape': browser = null; out.write(`${ESC}2J`); return scheduleRender()
+    }
+    switch (str) {
+      case 'q':
+      case 'l': browser = null; out.write(`${ESC}2J`); return scheduleRender()
+      case '[': return openBrowser(b.index + 1)
+      case ']': return openBrowser(b.index - 1)
+      case 'w': b.activity = !b.activity; b.scroll = 0; return scheduleRender()
+      case '/': return ask('Filter (empty = all lines):', v => { b.filter = v; b.scroll = 0 })
+    }
   }
 
   // ---- Actions
@@ -268,6 +354,19 @@ export async function startTui () {
     // Any key dismisses a sticky message (like a new install link) and does nothing else.
     if (message?.sticky) { message = null; return scheduleRender() }
     if (!data) return
+    if (browser) return browserKey(str, key)
+
+    // Scrolling the log pane.
+    const page = Math.max(1, logRowsShown - 1)
+    const top = Math.max(0, logs.length - logRowsShown)
+    switch (key?.name) {
+      case 'up': logScroll = Math.min(top, logScroll + 1); return scheduleRender()
+      case 'down': logScroll = Math.max(0, logScroll - 1); return scheduleRender()
+      case 'pageup': logScroll = Math.min(top, logScroll + page); return scheduleRender()
+      case 'pagedown': logScroll = Math.max(0, logScroll - page); return scheduleRender()
+      case 'home': logScroll = top; return scheduleRender()
+      case 'end': logScroll = 0; return scheduleRender()
+    }
 
     switch (str) {
       case 'a':
@@ -284,6 +383,8 @@ export async function startTui () {
       case 't':
         showTokens = !showTokens
         return scheduleRender()
+      case 'l':
+        return openBrowser(0)
       case 'x':
         if (!torrents.length) return flash('No torrents to remove.', 'warn')
         return ask(`Remove torrent # (1-${torrents.length}); stops it for everyone:`, n => {

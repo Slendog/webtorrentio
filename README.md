@@ -340,14 +340,28 @@ the network), so you can close and reopen it while the server keeps running.
 | `t` | Show or hide tokens. |
 | `1`–`8` | Change a limit: torrents total, per user, disk total (GB), disk per stream (MB), readahead (MB), idle timeout (minutes), audio conversions at once (`0` = off), watch-together rooms (`0` = off). |
 | `r` | Close a watch-together room. |
+| `↑` `↓` PgUp PgDn Home End | Scroll the log pane (the last 5000 lines); End follows new lines again. |
+| `l` | Log browser: the daily log files, with `[` / `]` for older and newer days, `/` to filter, `w` for only `[watch]` and `[room]` lines, Esc to go back. |
 | `x` | Remove a torrent, even while people watch it. |
 | `b`, `q`, Ctrl+C | Close the dashboard; the server keeps running. |
 | `s` | Stop the server (asks first). |
 
+### Log files
+
+Every log line is also written to a daily file, `state/logs/webtorrentio-YYYY-MM-DD.log` (owner
+only). Files are kept `LOG_RETENTION_DAYS` days (default 90) and at most `LOG_MAX_MB` in total
+(default 500); the oldest go first. In Docker they are in the state volume (`data/state/logs`
+on BAS), so they outlive container restarts and Docker's own log rotation (30 MB). The TUI's
+`l` key browses them; `grep` works on them too:
+
+```sh
+grep -h '\[watch\]' state/logs/webtorrentio-2026-09-*.log
+```
+
 ### Activity log
 
-The log (TUI, `state/server.log`, or `docker compose logs addon`) records who watches what, with
-a timestamp on every line:
+The log (TUI, the log files, or `docker compose logs addon`) records who watches what, with a
+timestamp on every line:
 
 ```
 [watch] alice started Reacher.S01E08.1080p.BluRay.x265-RARBG.mp4 via WebTorrent (1080p) [1fab1b56]
@@ -557,6 +571,9 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `NEXT_EPISODE_TTL_MS` | `1800000` | How long a next-episode prefetch is kept if unused. |
 | `EDGE_CACHE_MB` | `500` (maximum `500`) | Header and index cache of played files; `0` turns it off. |
 | `AUDIO_CONVERSIONS` | `0` (off) | [Stereo audio conversions](#stereo-audio-conversion) that may run at once; `on` means `2`. Needs ffmpeg. |
+| `LOG_DIR` | `logs/` next to `STATE_FILE` | Daily log files. |
+| `LOG_RETENTION_DAYS` | `90` | Days of log files kept; `0` turns log files off. |
+| `LOG_MAX_MB` | `500` | Most disk space for all log files. |
 | `MAX_ROOMS` | `3` | [Watch-together](#watch-together) rooms at once; `0` turns it off. Needs `AUDIO_CONVERSIONS`. |
 | `TORRENT_PORT` | random (`6881` in Docker) | Port for incoming peers (TCP, and uTP over UDP). |
 | `DHT_PORT` | `TORRENT_PORT + 1`, or random | UDP port for the DHT. Must differ from `TORRENT_PORT`. |
