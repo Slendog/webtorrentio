@@ -66,6 +66,16 @@ export function listUsers () {
 
 export const authRequired = () => users.size > 0
 
+// Admins may stop anyone's torrents from the web dashboard. ADMIN_USERS="alice,bob" names them;
+// by default the first user (the first entry of ACCESS_TOKENS, else the first one added).
+// Without users (open access) everyone is "local" and may do everything.
+const adminNames = (process.env.ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean)
+export function isAdmin (user) {
+  if (!users.size) return true
+  if (adminNames.length) return adminNames.includes(user)
+  return users.keys().next().value === user
+}
+
 const digest = s => crypto.createHash('sha256').update(String(s)).digest()
 
 // Constant-time lookup of the user that owns a token. Hashing first gives equal-length buffers.

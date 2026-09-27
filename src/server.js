@@ -168,7 +168,8 @@ router.get('/status', (req, res) => res.json({ ...status(req.user), conversions:
 router.delete('/api/torrents/:infoHash', (req, res) => {
   const result = removeByHash(req.params.infoHash.toLowerCase(), req.user)
   if (result === 'removed') return res.status(204).end()
-  if (result === 'busy') return res.status(409).send('Another user is streaming this torrent')
+  if (result === 'busy') return res.status(409).send('Someone else is watching this torrent right now.')
+  if (result === 'not-yours') return res.status(403).send('Only the person who started this torrent, or an admin, can remove it.')
   res.status(404).end()
 })
 

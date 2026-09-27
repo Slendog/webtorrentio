@@ -141,7 +141,7 @@ export const dashboardHtml = `<!doctype html>
       : ''
     return '<div class="card">' +
       '<div class="top"><div><div class="name">' + esc(t.name) + '</div><div class="badges">' + badges + '</div></div>' +
-      '<button data-remove="' + t.infoHash + '">Remove</button></div>' +
+      (t.canRemove ? '<button data-remove="' + t.infoHash + '"' + (t.othersWatching ? ' data-others="1"' : '') + '>' + (t.othersWatching ? 'Stop for everyone' : 'Remove') + '</button>' : '') + '</div>' +
       '<div class="progress"><div style="width:' + pct + '%"></div></div>' +
       '<div class="muted" style="font-size:13px">' + pct + '% of ' + bytes(t.length) + (t.timeRemaining != null && t.progress < 1 && t.downloadSpeed > 1024 ? ' &middot; full download in ' + duration(t.timeRemaining) : '') + '</div>' +
       '<div class="grid">' +
@@ -201,9 +201,10 @@ export const dashboardHtml = `<!doctype html>
   document.addEventListener('click', async e => {
     const hash = e.target.dataset?.remove
     if (!hash) return
+    if (e.target.dataset.others && !confirm('Others are watching this. Stop it for everyone?')) return
     e.target.disabled = true
     const res = await fetch('api/torrents/' + hash, { method: 'DELETE' })
-    if (res.status === 409) alert(await res.text())
+    if (res.status === 409 || res.status === 403) alert(await res.text())
     refresh()
   })
 

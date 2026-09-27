@@ -10,7 +10,7 @@ import { PieceStore } from './piece-store.js'
 import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
 import { fatal } from './runtime.js'
-import { onChange } from './settings.js'
+import { isAdmin, onChange } from './settings.js'
 
 const READY_TIMEOUT_MS = 60_000
 
@@ -292,6 +292,8 @@ function getTorrent (infoHash) {
       torrent,
       dir,
       played: new Set(),
+      // Users who played it (not prefetches): they may stop it from the web dashboard.
+      owners: new Set(),
       connections: 0,
       files: new Map(),
       users: new Map(),
@@ -326,6 +328,7 @@ export async function resolveFile (infoHash, fileIdx, season, episode, user) {
   if (entry.prefetch) console.log(`[prefetch] ${infoHash.slice(0, 8)} used by ${user}${entry.torrent.ready ? ' (metadata was ready)' : ''}`)
   entry.prefetch = false
   entry.nextEpisode = false
+  entry.owners.add(user)
   clearTimeout(entry.idleTimer)
   bump(entry.pending, user, 1)
   try {
@@ -588,11 +591,22 @@ export function readRange (entry, file, start, end, user) {
 
 export const isRemoved = entry => entry.torrent.destroyed || !entries.has(entry.infoHash)
 
-// Returns "removed", "missing", or "busy" (someone else is streaming it).
+// Whether `user` may stop a torrent from the web dashboard: an admin always; anyone else only
+// a torrent they played themselves while nobody else is using it.
+function removableBy (entry, user) {
+  if (isAdmin(user)) return 'yes'
+  if (!entry.owners.has(user)) return 'not-yours'
+  if ([...entry.users.keys(), ...entry.pending.keys()].some(u => u !== user)) return 'busy'
+  return 'yes'
+}
+
+// Returns "removed", "missing", "not-yours" or "busy" (someone else is streaming it).
 export function removeByHash (infoHash, user) {
   const entry = entries.get(infoHash)
   if (!entry) return 'missing'
-  if ([...entry.users.keys(), ...entry.pending.keys()].some(u => u !== user)) return 'busy'
+  const allowed = removableBy(entry, user)
+  if (allowed !== 'yes') return allowed
+  if (isAdmin(user) && [...entry.users.keys()].some(u => u !== user)) console.log(`[admin] ${user} stopped ${entry.infoHash.slice(0, 8)} while others were watching`)
   removeTorrent(infoHash)
   return 'removed'
 }
@@ -686,7 +700,7 @@ function watchers (entry) {
   return { runtimeSec: runtimeSec || null, list: list.sort((a, b) => b.fraction - a.fraction) }
 }
 
-function torrentStats (entry) {
+function torrentStats (entry, user) {
   const { infoHash, torrent, connections, files, users, addedAt, lastUsed } = entry
   const wires = torrent.wires || []
   const seeders = wires.filter(w => w.isSeeder).length
@@ -719,7 +733,10 @@ function torrentStats (entry) {
     addedAt,
     lastUsed,
     removesAt: connections === 0 ? lastUsed + (entry.prefetch ? (entry.prefetchTtlMs || config.prefetchTtlMs) : config.idleTimeoutMs) : null,
-    nextEpisode: Boolean(entry.nextEpisode)
+    nextEpisode: Boolean(entry.nextEpisode),
+    // For the web dashboard's Remove button (null in the admin socket's view).
+    canRemove: user == null ? null : removableBy(entry, user) === 'yes',
+    othersWatching: [...entry.users.keys()].some(u => u !== user)
   }
 }
 
@@ -734,7 +751,8 @@ export function status (user) {
     disk: { used: diskUsage(), limit: config.maxDiskBytes || null, perStreamLimit: config.maxDiskPerStreamBytes || null },
     edgeCache: edgeCacheUsage(),
     idleTimeoutMs: config.idleTimeoutMs,
-    torrents: [...entries.values()].map(torrentStats)
+    torrents: [...entries.values()].map(e => torrentStats(e, user)),
+    admin: user == null ? null : isAdmin(user)
   }
 }
 

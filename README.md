@@ -356,8 +356,17 @@ skipped in `native` mode.
 
 `<PUBLIC_URL>/<token>/dashboard` (or `/dashboard` without users). Per torrent: download and
 upload speed with a 90-second graph, connected peers, progress, disk use, the file being
-played, who is watching, and for each connection how much is downloaded ahead. **Remove** stops
-a torrent unless another user is streaming it.
+played, who is watching, and for each connection how much is downloaded ahead.
+
+Everyone sees every torrent, but **Remove** appears only where you may use it:
+
+- on torrents you played yourself, while nobody else is watching them;
+- for admins, on every torrent. When others are watching, the button says **Stop for
+  everyone** and asks first; the log records it as an `[admin]` line.
+
+The admin is the first user (the first entry of `ACCESS_TOKENS`, or the first one added);
+`ADMIN_USERS=alice,bob` names others instead. The TUI and the command line can always remove
+any torrent.
 
 ### TUI dashboard
 
@@ -584,6 +593,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
 | `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x`), or `all`. |
 | `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
+| `ADMIN_USERS` | the first user | Users who may stop anyone's torrents in the web dashboard, comma-separated. |
 | `STATE_FILE` | `state/state.json` | Saved users and limits. The admin socket and background log live next to it. |
 | `ADMIN_SOCKET` | `state/admin.sock` | Unix socket between the TUI and the server. |
 | `DOWNLOAD_PATH` | `$TMPDIR/stremio-webtorrent` | Torrent cache. |
