@@ -193,6 +193,15 @@ export function endSharedSession (sharedKey) {
   if (s) endSession(s)
 }
 
+// End a user's own conversions of a torrent (Stereo entries; rooms are closed separately).
+export function stopUserConversions (user, infoHash) {
+  let n = 0
+  for (const s of [...sessions.values()]) {
+    if (s.user === user && s.infoHash === infoHash && !s.key.startsWith('room\n')) { endSession(s); n++ }
+  }
+  return n
+}
+
 export function stopAllConversions () {
   for (const s of [...sessions.values()]) endSession(s)
 }

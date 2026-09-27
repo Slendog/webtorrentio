@@ -48,6 +48,7 @@ export const dashboardHtml = `<!doctype html>
   .playing { margin-top: 10px; font-size: 13px; color: var(--muted); word-break: break-word; }
   .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
   .error { color: var(--danger); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
   a.join { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
 </style>
 </head>
@@ -141,7 +142,8 @@ export const dashboardHtml = `<!doctype html>
       : ''
     return '<div class="card">' +
       '<div class="top"><div><div class="name">' + esc(t.name) + '</div><div class="badges">' + badges + '</div></div>' +
-      (t.canRemove ? '<button data-remove="' + t.infoHash + '"' + (t.othersWatching ? ' data-others="1"' : '') + '>' + (t.othersWatching ? 'Stop for everyone' : 'Remove') + '</button>' : '') + '</div>' +
+      '<div class="actions">' + (t.mine && t.othersWatching ? '<button data-stop="' + t.infoHash + '">Stop my stream</button>' : '') +
+      (t.canRemove ? '<button data-remove="' + t.infoHash + '"' + (t.othersWatching ? ' data-others="1"' : '') + '>' + (t.othersWatching ? 'Stop for everyone' : 'Remove') + '</button>' : '') + '</div></div>' +
       '<div class="progress"><div style="width:' + pct + '%"></div></div>' +
       '<div class="muted" style="font-size:13px">' + pct + '% of ' + bytes(t.length) + (t.timeRemaining != null && t.progress < 1 && t.downloadSpeed > 1024 ? ' &middot; full download in ' + duration(t.timeRemaining) : '') + '</div>' +
       '<div class="grid">' +
@@ -199,6 +201,12 @@ export const dashboardHtml = `<!doctype html>
   }
 
   document.addEventListener('click', async e => {
+    const mine = e.target.dataset?.stop
+    if (mine) {
+      e.target.disabled = true
+      await fetch('api/torrents/' + mine + '/stop-mine', { method: 'POST' })
+      return refresh()
+    }
     const hash = e.target.dataset?.remove
     if (!hash) return
     if (e.target.dataset.others && !confirm('Others are watching this. Stop it for everyone?')) return

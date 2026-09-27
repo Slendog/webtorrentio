@@ -10,17 +10,18 @@ import { startAdmin } from './admin.js'
 import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
-import { conversionAvailable, conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
+import { conversionAvailable, conversionInfo, getSession, playlist, segment, stopAllConversions, stopUserConversions } from './convert.js'
 import { act, closeAllRooms, closeRoom, createRoom, getRoom, join, report, roomsAvailable, roomStatus } from './rooms.js'
 import { subtitleList, subtitleVtt } from './subtitles.js'
 import { joinPage, WATCH_CSP, watchPage } from './watch-page.js'
 import path from 'node:path'
+import { publicPage, publicStatus } from './public-page.js'
 import { fileURLToPath } from 'node:url'
 import { resolveScraperKeys, SCRAPER_KEYS } from './scrapers/index.js'
 import { authRequired, listUsers, userForToken } from './settings.js'
 import net from 'node:net'
 import { getScraped } from './registry.js'
-import { LimitError, openStream, removeByHash, resolveFile, shutdown, status, userConnections, waitForData } from './torrent.js'
+import { LimitError, openStream, removeByHash, resolveFile, shutdown, status, stopUserStreams, userConnections, waitForData } from './torrent.js'
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mkv: 'video/x-matroska', webm: 'video/webm',
@@ -164,6 +165,14 @@ router.get('/install', (req, res) =>
 
 router.get('/dashboard', (req, res) => res.type('html').send(dashboardHtml))
 router.get('/status', (req, res) => res.json({ ...status(req.user), conversions: conversionInfo(), rooms: roomStatus() }))
+
+// Stop only this user's connections and conversions of a torrent that others are watching too.
+router.post('/api/torrents/:infoHash/stop-mine', (req, res) => {
+  const hash = req.params.infoHash.toLowerCase()
+  const n = stopUserConversions(req.user, hash) + stopUserStreams(hash, req.user)
+  if (n) console.log(`[watch] ${req.user} stopped their own stream of ${hash.slice(0, 8)} from the dashboard`)
+  res.status(n ? 204 : 404).end()
+})
 
 router.delete('/api/torrents/:infoHash', (req, res) => {
   const result = removeByHash(req.params.infoHash.toLowerCase(), req.user)
@@ -509,6 +518,11 @@ watch.post('/:room/close', roomAction(req => {
 
 // hls.js for the room page. Public: it is a published library, no data of this server.
 const hlsJs = path.join(path.dirname(fileURLToPath(import.meta.resolve('hls.js'))), 'hls.min.js')
+if (config.publicDashboard) {
+  app.get('/public', (req, res) => res.type('html').send(publicPage()))
+  app.get('/public/status.json', (req, res) => res.json(publicStatus()))
+}
+
 app.get('/assets/hls.min.js', (req, res) => res.set('Cache-Control', 'public, max-age=86400').type('js').sendFile(hlsJs))
 
 // Users can be added and removed while the server runs, so the token check happens per request:
@@ -570,6 +584,7 @@ function startupSummary () {
   if (!users.length && !['127.0.0.1', '::1', 'localhost'].includes(config.host)) {
     lines.push(`WARNING: listening on ${config.host} without users: other machines can use this server. Add a user.`)
   }
+  if (config.publicDashboard) lines.push(`Public "Now watching" page (no token needed): ${config.publicUrl}/public`)
   lines.push(`HTTPS (HTTPS=${config.httpsMode}): ${config.tls ? `on, port ${config.httpsPort}` : 'off'}`)
   if (!config.publicUrl.startsWith('https://')) {
     lines.push('No HTTPS: stremio:// install links fail with a TLS error. Paste the manifest URL into Stremio instead.')

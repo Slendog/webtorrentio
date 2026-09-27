@@ -479,6 +479,7 @@ export function openStream (entry, file, start, end, user, { season, episode, vi
   entry.played.add(file.path)
   entry.readers.add(reader)
   const stream = new SliceStream(entry, reader, start, end)
+  reader.stream = stream
   if (via) trackWatch(entry, file, user, via, stream, start)
 
   entry.connections++
@@ -600,6 +601,17 @@ function removableBy (entry, user) {
   return 'yes'
 }
 
+// Close one user's own connections to a torrent (a stuck player), leaving it running for the
+// others. Returns how many were closed.
+export function stopUserStreams (infoHash, user) {
+  const entry = entries.get(infoHash)
+  if (!entry) return 0
+  const mine = [...entry.readers].filter(r => r.user === user)
+  // With an error, so the HTTP response feeding the player is closed too.
+  for (const r of mine) r.stream?.destroy(new Error('stopped from the dashboard'))
+  return mine.length
+}
+
 // Returns "removed", "missing", "not-yours" or "busy" (someone else is streaming it).
 export function removeByHash (infoHash, user) {
   const entry = entries.get(infoHash)
@@ -693,7 +705,8 @@ function watchers (entry) {
   }
   const list = [...best.values()].map(r => {
     const fraction = r.pos / r.file.length
-    return { user: r.user, fraction, positionSec: runtimeSec ? Math.round(fraction * runtimeSec) : null }
+    const via = watches.get(`${r.user}\n${entry.infoHash}\n${r.file.path}`)?.via || null
+    return { user: r.user, file: r.file.name, via, fraction, positionSec: runtimeSec ? Math.round(fraction * runtimeSec) : null }
   })
   const lead = Math.max(0, ...list.map(w => w.positionSec ?? 0))
   for (const w of list) w.behindSec = w.positionSec == null ? null : lead - w.positionSec
@@ -736,7 +749,8 @@ function torrentStats (entry, user) {
     nextEpisode: Boolean(entry.nextEpisode),
     // For the web dashboard's Remove button (null in the admin socket's view).
     canRemove: user == null ? null : removableBy(entry, user) === 'yes',
-    othersWatching: [...entry.users.keys()].some(u => u !== user)
+    othersWatching: [...entry.users.keys()].some(u => u !== user),
+    mine: user != null && (entry.users.has(user) || entry.pending.has(user))
   }
 }
 

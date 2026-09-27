@@ -360,13 +360,24 @@ played, who is watching, and for each connection how much is downloaded ahead.
 
 Everyone sees every torrent, but **Remove** appears only where you may use it:
 
-- on torrents you played yourself, while nobody else is watching them;
+- on torrents you played yourself, while nobody else is watching them (also while you are
+  streaming it yourself, for a stuck player);
+- when someone else watches the same torrent too, **Stop my stream** closes only your own
+  connections and conversions of it; the others keep watching;
 - for admins, on every torrent. When others are watching, the button says **Stop for
   everyone** and asks first; the log records it as an `[admin]` line.
 
 The admin is the first user (the first entry of `ACCESS_TOKENS`, or the first one added);
 `ADMIN_USERS=alice,bob` names others instead. The TUI and the command line can always remove
 any torrent.
+
+### Public "Now watching" page
+
+With `PUBLIC_DASHBOARD=on`, `<PUBLIC_URL>/public` shows everyone who can reach the server who
+is watching what right now (user name, title, how far in, WebTorrent, Stereo or Together) and
+the open watch-together rooms. It needs no token and has no controls; tokens, links and file
+details stay private. Off by default, because it tells anyone with the address what your users
+watch.
 
 ### TUI dashboard
 
@@ -593,6 +604,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
 | `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x`), or `all`. |
 | `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
+| `PUBLIC_DASHBOARD` | `off` | `on` publishes the read-only [Now watching](#public-now-watching-page) page at `/public`. |
 | `ADMIN_USERS` | the first user | Users who may stop anyone's torrents in the web dashboard, comma-separated. |
 | `STATE_FILE` | `state/state.json` | Saved users and limits. The admin socket and background log live next to it. |
 | `ADMIN_SOCKET` | `state/admin.sock` | Unix socket between the TUI and the server. |
