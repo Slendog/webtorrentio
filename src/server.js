@@ -10,7 +10,7 @@ import { startAdmin } from './admin.js'
 import { loadPair, watchCertificate } from './tls-reload.js'
 import { commands, fatal } from './runtime.js'
 import { startNextEpisodePrefetch } from './next-episode.js'
-import { conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
+import { conversionAvailable, conversionInfo, getSession, playlist, segment, stopAllConversions } from './convert.js'
 import { act, closeAllRooms, closeRoom, createRoom, getRoom, join, report, roomsAvailable, roomStatus } from './rooms.js'
 import { subtitleList, subtitleVtt } from './subtitles.js'
 import { joinPage, WATCH_CSP, watchPage } from './watch-page.js'
@@ -154,6 +154,7 @@ router.get('/', (req, res) => {
     manifest,
     manifestUrl: `${config.publicUrl}${userBase(req)}/manifest.json`,
     togetherUrl: roomsAvailable() ? `${config.publicUrl}${userBase(req)}/together/manifest.json` : null,
+    stereo: conversionAvailable(),
     user: req.userBase ? req.user : null
   }))
 })

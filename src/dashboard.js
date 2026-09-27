@@ -1,28 +1,25 @@
+import { TOKENS } from './ui.js'
+
 // Live stats page for the WebTorrent client. Polls /status and renders one card per torrent.
 export const dashboardHtml = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WebTorrent Dashboard</title>
+<title>What is playing</title>
 <style>
-  :root {
-    --bg: #f4f3f8; --card: #ffffff; --text: #1d1a29; --muted: #6b6780; --line: #e3e0ec;
-    --accent: #6a4ae0; --down: #1f8f5f; --up: #2f6fd6; --bar: #e9e6f3; --danger: #c43d3d;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #151221; --card: #211c33; --text: #eeeaf8; --muted: #9d97b3; --line: #332c4a;
-      --accent: #8c70ff; --down: #3ecf8e; --up: #5b9bff; --bar: #2d2743; --danger: #ff6b6b;
-    }
-  }
+  ${TOKENS}
+  :root { --bg: var(--paper); --card: var(--surface); --text: var(--ink); --down: var(--accent); --up: #3f7fd6; --bar: var(--line); }
+  h1, .name { font-family: var(--display); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
   main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 20px; }
-  h1 { margin: 0; font-size: 22px; }
-  .totals { display: flex; gap: 20px; font-variant-numeric: tabular-nums; }
-  .totals b { font-size: 20px; }
+  header { margin-bottom: 22px; }
+  h1 { margin: 0 0 16px; font-size: clamp(26px, 5vw, 34px); font-weight: 800; letter-spacing: -0.02em; }
+  .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; font-variant-numeric: tabular-nums; }
+  .totals > div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  .totals span { display: block; font-size: 13px; color: var(--muted); }
+  .totals b { display: block; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .down { color: var(--down); } .up { color: var(--up); }
   .muted { color: var(--muted); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
@@ -36,12 +33,12 @@ export const dashboardHtml = `<!doctype html>
   .progress { height: 8px; border-radius: 99px; background: var(--bar); overflow: hidden; margin: 14px 0 4px; }
   .progress > div { height: 100%; background: var(--accent); transition: width .5s; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
-  .stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat .label { font-size: 12px; color: var(--muted); }
   .stat .value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .stat .sub { font-size: 12px; color: var(--muted); }
   svg.spark { width: 100%; height: 40px; margin-top: 12px; display: block; }
   .watching { margin-top: 12px; font-size: 14px; }
-  .watching .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; }
+  .watching .label { font-size: 12px; color: var(--muted); margin-right: 6px; }
   .watching .behind { color: var(--danger); font-size: 13px; }
   .watching .lead { color: var(--down); font-size: 13px; }
   .viewer { margin-top: 12px; font-size: 13px; }
@@ -57,15 +54,15 @@ export const dashboardHtml = `<!doctype html>
 <body>
 <main>
   <header>
-    <h1>WebTorrent Dashboard</h1>
+    <h1>What is playing</h1>
     <div class="totals">
-      <span class="down">&darr; <b id="down">0 B/s</b></span>
-      <span class="up">&uarr; <b id="up">0 B/s</b></span>
-      <span class="muted"><b id="count">0</b> torrents</span>
-      <span class="muted" id="limits"></span>
-      <span class="muted">Disk <b id="disk">0 B</b></span>
-      <span class="muted" id="conversions"></span>
+      <div><span>Downloading</span><b class="down" id="down">0 B/s</b></div>
+      <div><span>Uploading</span><b class="up" id="up">0 B/s</b></div>
+      <div><span>Torrents</span><b id="count">0</b></div>
+      <div><span>Disk</span><b id="disk">0 B</b></div>
+      <div><span>Stereo</span><b id="conversions">off</b></div>
     </div>
+    <p class="muted" id="limits"></p>
   </header>
   <div id="rooms"></div>
   <div id="list"></div>
@@ -168,21 +165,20 @@ export const dashboardHtml = `<!doctype html>
       diskPerStream = data.disk.perStreamLimit
       document.getElementById('down').textContent = speed(data.downloadSpeed)
       document.getElementById('up').textContent = speed(data.uploadSpeed)
-      document.getElementById('count').textContent = data.usedSlots + ' / ' + data.maxActiveTorrents + (data.torrents.length > data.usedSlots ? ' (+' + (data.torrents.length - data.usedSlots) + ' prefetched)' : '')
-      document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' / ' + bytes(data.disk.limit) : '') +
-        (data.edgeCache && data.edgeCache.limit ? ' · edge cache ' + bytes(data.edgeCache.bytes) + ' / ' + bytes(data.edgeCache.limit) : '')
-      document.getElementById('limits').textContent = 'Limit: ' + data.maxTorrentsPerUser + ' torrents per user'
+      document.getElementById('count').textContent = data.usedSlots + ' of ' + data.maxActiveTorrents + (data.torrents.length > data.usedSlots ? ' (+' + (data.torrents.length - data.usedSlots) + ' ready)' : '')
+      document.getElementById('disk').textContent = bytes(data.disk.used) + (data.disk.limit ? ' of ' + bytes(data.disk.limit) : '')
+      document.getElementById('limits').textContent = 'Everyone can stream up to ' + data.maxTorrentsPerUser + ' torrents at once. Torrents that nobody watches are removed after a few minutes.'
       const rooms = data.rooms || []
       document.getElementById('rooms').innerHTML = rooms.map(r =>
-        '<div class="card"><div class="top"><div><div class="name">👥 ' + esc(r.name || r.infoHash) + '</div>' +
+        '<div class="card"><div class="top"><div><div class="name">👥 ' + esc(r.name || 'Watch-together room') + '</div>' +
         '<div class="badges"><span class="badge' + (r.playing ? ' live' : '') + '">' + (r.waiting ? 'waiting for buffering' : r.playing ? 'playing' : 'paused') + ' at ' + clock(r.position) + '</span>' +
         '<span class="badge">host ' + esc(r.host === me ? 'you' : r.host) + '</span>' +
         r.members.map(m => '<span class="badge">' + esc(m.name) + (m.buffering ? ' ⏳' : '') + '</span>').join('') + '</div></div>' +
         '<a class="join" href="watch/' + encodeURIComponent(r.id) + '">Join</a></div></div>').join('')
       const conv = data.conversions
       document.getElementById('conversions').textContent = conv && conv.limit
-        ? 'Stereo conversions ' + conv.active.length + ' / ' + conv.limit
-        : 'Stereo conversion off'
+        ? conv.active.length + ' of ' + conv.limit
+        : 'off'
 
       const alive = new Set()
       for (const t of data.torrents) {

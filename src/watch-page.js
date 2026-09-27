@@ -1,8 +1,7 @@
 // Browser pages for watch together (see rooms.js): the room page with the player, and the
 // page an invite link opens when the browser does not know the member's token yet.
 
-const scriptJson = v => JSON.stringify(v).replace(/</g, '\\u003c')
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+import { esc, scriptJson, TOKENS } from './ui.js'
 
 // The room page loads hls.js from this server and plays through MediaSource (blob: URLs,
 // a blob: worker), so it needs a wider policy than the other pages.
@@ -10,18 +9,19 @@ export const WATCH_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline';
   "connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; img-src 'self' data:; " +
   "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 
-const STYLE = `
-  :root { --bg: #f4f3f8; --card: #fff; --text: #1d1a29; --muted: #6b6780; --line: #e3e0ec; --accent: #6a4ae0; --ok: #1f8f5f; --warn: #b7791f; --danger: #c43d3d; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #151221; --card: #211c33; --text: #eeeaf8; --muted: #9d97b3; --line: #332c4a; --accent: #8c70ff; --ok: #3ecf8e; --warn: #f0b429; --danger: #ff6b6b; } }
+// Same colours and type as the other pages (ui.js), under the names this page uses.
+const STYLE = `${TOKENS}
+  :root { --bg: var(--paper); --card: var(--surface); --text: var(--ink); --ok: var(--accent); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 40px; }
-  h1 { font-size: 19px; margin: 0 0 12px; word-break: break-word; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font: 800 22px/1.2 var(--display); letter-spacing: -0.01em; margin: 0 0 14px; word-break: break-word; }
   .muted { color: var(--muted); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 14px; }
-  button, select, input[type=text] { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-top: 14px; }
+  button, select, input[type=text] { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; }
   button { cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 12px 24px; }
+  button.primary { background: var(--accent); border: 0; color: var(--accent-ink); font-weight: 700; padding: 13px 26px; border-radius: 999px; }
+  :focus-visible { outline: 3px solid var(--stub); outline-offset: 2px; }
   .error { color: var(--danger); }
 `
 
@@ -68,7 +68,7 @@ export function watchPage ({ roomId, user, isHost, shareUrl, title, auth }) {
     <div class="members" id="members"></div>
   </div>
   <div class="card">
-    <b>Invite</b> <span class="muted">Everyone opens this link and uses their own install link; do not share yours.</span>
+    <b>Invite</b> <span class="muted">Send this link to the people you want to watch with. Each of them joins with their own install link.</span>
     <div class="share"><input type="text" id="share" readonly><button id="copy">Copy</button></div>
   </div>
   <div class="card" id="hostCard" hidden>
@@ -345,14 +345,15 @@ export function joinPage (roomId) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Watch together</title>
-<style>${STYLE} main { max-width: 520px; padding-top: 48px; } input { width: 100%; margin: 8px 0; }</style>
+<style>${STYLE} main { max-width: 560px; padding-top: 56px; } h1 { font-size: clamp(28px, 6vw, 38px); } input { width: 100%; margin: 12px 0; padding: 12px; }</style>
 </head>
 <body>
 <main>
-  <h1>Watch together</h1>
-  <p>Paste your personal install link (the one you use in Stremio) to join. It is stored in this browser only.</p>
-  <input type="text" id="link" placeholder="https://…/<your token>/manifest.json" autocomplete="off">
-  <p><button class="primary" id="go">Join</button></p>
+  <h1>You are invited to watch together.</h1>
+  <p>To join, paste your own install link: the one you got for Stremio, or the address of your install page. This browser remembers it for next time.</p>
+  <input type="text" id="link" placeholder="https://…/your-personal-code/" autocomplete="off" aria-label="Your install link">
+  <p><button class="primary" id="go">Join the room</button></p>
+  <p class="muted">No link yet? Ask the person who runs the server for one.</p>
   <p class="error" id="err"></p>
 </main>
 <script>
