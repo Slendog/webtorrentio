@@ -122,9 +122,11 @@ export const config = {
   // Audio conversions (stereo downmix without clipping, served as HLS; needs ffmpeg) that may
   // run at once. 0 or "off" turns the feature off; "on" means 2. See convert.js.
   audioConversions: ({ on: 2, off: 0 })[(env.AUDIO_CONVERSIONS || '').trim().toLowerCase()] ?? (Number(env.AUDIO_CONVERSIONS) || 0),
-  // Read-only "Now watching" page without a token, at /public (public-page.js). Off by default:
-  // it shows everyone who can reach the server which user watches what.
-  publicDashboard: /^(on|1|true|yes)$/i.test(env.PUBLIC_DASHBOARD || ''),
+  // Read-only pages without a token (public-page.js), off by default:
+  //   anonymous  /public shows what plays and for how many people, no names
+  //   on, named  /public shows who watches what; /public/anonymous the version without names
+  publicDashboard: /^(on|named|1|true|yes)$/i.test(env.PUBLIC_DASHBOARD || '') ? 'named'
+    : /^anon(ymous)?$/i.test(env.PUBLIC_DASHBOARD || '') ? 'anonymous' : 'off',
   // Watch-together rooms open at once (rooms.js); 0 turns watch together off. Rooms need the
   // audio conversion, and each room uses one of AUDIO_CONVERSIONS.
   maxRooms: env.MAX_ROOMS !== undefined ? Number(env.MAX_ROOMS) : 3,

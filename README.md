@@ -371,13 +371,19 @@ The admin is the first user (the first entry of `ACCESS_TOKENS`, or the first on
 `ADMIN_USERS=alice,bob` names others instead. The TUI and the command line can always remove
 any torrent.
 
-### Public "Now watching" page
+### Public pages
 
-With `PUBLIC_DASHBOARD=on`, `<PUBLIC_URL>/public` shows everyone who can reach the server who
-is watching what right now (user name, title, how far in, WebTorrent, Stereo or Together) and
-the open watch-together rooms. It needs no token and has no controls; tokens, links and file
-details stay private. Off by default, because it tells anyone with the address what your users
-watch.
+Two read-only pages that need no token and have no controls; tokens, links and file details
+stay private. Off by default, set with `PUBLIC_DASHBOARD`:
+
+| `PUBLIC_DASHBOARD` | `<PUBLIC_URL>/public` | `<PUBLIC_URL>/public/anonymous` |
+|---|---|---|
+| `off` (default) | not available | not available |
+| `anonymous` | what is playing and for how many people, no names | the same |
+| `on` (or `named`) | who is watching what: user name, title, how far in, WebTorrent, Stereo or Together | the version without names |
+
+Both also list the open watch-together rooms (with names only on the named page). The named page
+tells anyone with the address what your users watch; the anonymous one only which titles play.
 
 ### TUI dashboard
 
@@ -604,7 +610,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
 | `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x`), or `all`. |
 | `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
-| `PUBLIC_DASHBOARD` | `off` | `on` publishes the read-only [Now watching](#public-now-watching-page) page at `/public`. |
+| `PUBLIC_DASHBOARD` | `off` | `anonymous`: read-only [public page](#public-pages) with what plays, no names. `on`: who watches what at `/public`, plus the anonymous page at `/public/anonymous`. |
 | `ADMIN_USERS` | the first user | Users who may stop anyone's torrents in the web dashboard, comma-separated. |
 | `STATE_FILE` | `state/state.json` | Saved users and limits. The admin socket and background log live next to it. |
 | `ADMIN_SOCKET` | `state/admin.sock` | Unix socket between the TUI and the server. |

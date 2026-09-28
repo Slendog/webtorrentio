@@ -4,12 +4,17 @@ import { status } from './torrent.js'
 import { page } from './ui.js'
 import { prettyTitle as title } from './names.js'
 
-// Read-only page without a token (PUBLIC_DASHBOARD=on): who is watching what right now, and
-// the open watch-together rooms. It shows names, never tokens, links or controls.
+// Read-only pages without a token (PUBLIC_DASHBOARD): what is playing right now and the open
+// watch-together rooms. Two versions:
+//   named      who watches what (user names, how far in, how)
+//   anonymous  only what plays and how many people watch it, no names
+// Neither shows tokens, links or controls.
 
 const clean = s => String(s ?? '').replace(/[\x00-\x1f\x7f-\x9f]/g, '')
 
-export function publicStatus () {
+const people = n => `${n} ${n === 1 ? 'person' : 'people'}`
+
+export function publicStatus ({ anonymous = false } = {}) {
   const st = status(null)
   const watching = []
   for (const t of st.torrents) {
@@ -33,7 +38,23 @@ export function publicStatus () {
     positionSec: r.position,
     people: r.members.map(m => clean(m.name))
   }))
-  return { server: new URL(config.publicUrl).host, watching, rooms, torrents: st.usedSlots, downloadSpeed: st.downloadSpeed, updatedAt: Date.now() }
+  const server = new URL(config.publicUrl).host
+  if (!anonymous) return { server, anonymous, watching, rooms, updatedAt: Date.now() }
+  // Anonymous: one row per title with the number of people and how they watch, nothing per person.
+  const titles = new Map()
+  for (const w of watching) {
+    const t = titles.get(w.title) || { title: w.title, count: 0, via: new Set() }
+    t.count++
+    t.via.add(w.via)
+    titles.set(w.title, t)
+  }
+  return {
+    server,
+    anonymous,
+    watching: [...titles.values()].map(t => ({ title: t.title, viewers: people(t.count), via: [...t.via] })),
+    rooms: rooms.map(({ title, playing, waiting, positionSec, people: p }) => ({ title, playing, waiting, positionSec, viewers: people(p.length) })),
+    updatedAt: Date.now()
+  }
 }
 
 const CSS = `
@@ -42,6 +63,7 @@ const CSS = `
     background: var(--surface); border: 1px solid var(--line); }
   .who { font: 700 17px var(--display); }
   .what { grid-column: 1; color: var(--ink); }
+  .what.muted { color: var(--muted); }
   .meta { grid-column: 2; grid-row: 1 / span 2; text-align: right; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
   .bar { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 8px; }
   .bar > div { height: 100%; background: var(--accent); }
@@ -55,9 +77,24 @@ const SCRIPT = `
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
   async function refresh () {
     let d
-    try { d = await fetch('public/status.json', { cache: 'no-store' }).then(r => r.json()) } catch { return }
+    try { d = await fetch(DATA_URL, { cache: 'no-store' }).then(r => r.json()) } catch { return }
     document.getElementById('host').textContent = d.server
     const list = document.getElementById('live'); list.textContent = ''
+    const tag = v => el('span', 'tag' + (v === 'Together' ? ' together' : ''), v)
+    if (d.anonymous) {
+      for (const w of d.watching) {
+        const row = el('div', 'row'); const what = el('div', 'who', w.title); w.via.forEach(v => what.append(tag(v)))
+        row.append(what, el('div', 'what muted', w.viewers + ' watching')); list.append(row)
+      }
+      for (const r of d.rooms) {
+        const row = el('div', 'row'); const what = el('div', 'who', r.title); what.append(tag('Together'))
+        row.append(what, el('div', 'what muted', r.viewers + ' in a watch-together room'),
+          el('div', 'meta', (r.waiting ? 'waiting' : r.playing ? 'playing' : 'paused') + ' at ' + clock(r.positionSec)))
+        list.append(row)
+      }
+      document.getElementById('empty').hidden = d.watching.length + d.rooms.length > 0
+      return
+    }
     for (const w of d.watching) {
       const row = el('div', 'row')
       const who = el('div', 'who', w.user); who.append(el('span', 'tag' + (w.via === 'Together' ? ' together' : ''), w.via))
@@ -77,14 +114,14 @@ const SCRIPT = `
   refresh(); setInterval(refresh, 5000)
 `
 
-export const publicPage = () => page({
-  title: 'Now watching',
+export const publicPage = ({ anonymous = false, dataUrl }) => page({
+  title: anonymous ? 'Playing now' : 'Now watching',
   css: CSS,
   body: `
     <p class="host" id="host"></p>
-    <h1>Now watching</h1>
-    <p class="lead">Who is watching what on this server right now. Updates every few seconds.</p>
+    <h1>${anonymous ? 'Playing now' : 'Now watching'}</h1>
+    <p class="lead">${anonymous ? 'What is playing on this server right now, and for how many people.' : 'Who is watching what on this server right now.'} Updates every few seconds.</p>
     <div class="live" id="live"></div>
-    <p class="empty" id="empty" hidden>Nobody is watching right now.</p>`,
-  script: SCRIPT
+    <p class="empty" id="empty" hidden>Nothing is playing right now.</p>`,
+  script: `const DATA_URL = ${JSON.stringify(dataUrl)}\n` + SCRIPT
 })

@@ -520,9 +520,12 @@ watch.post('/:room/close', roomAction(req => {
 
 // hls.js for the room page. Public: it is a published library, no data of this server.
 const hlsJs = path.join(path.dirname(fileURLToPath(import.meta.resolve('hls.js'))), 'hls.min.js')
-if (config.publicDashboard) {
-  app.get('/public', (req, res) => res.type('html').send(publicPage()))
-  app.get('/public/status.json', (req, res) => res.json(publicStatus()))
+if (config.publicDashboard !== 'off') {
+  const named = config.publicDashboard === 'named'
+  app.get('/public', (req, res) => res.type('html').send(publicPage({ anonymous: !named, dataUrl: '/public/status.json' })))
+  app.get('/public/status.json', (req, res) => res.json(publicStatus({ anonymous: !named })))
+  app.get('/public/anonymous', (req, res) => res.type('html').send(publicPage({ anonymous: true, dataUrl: '/public/anonymous/status.json' })))
+  app.get('/public/anonymous/status.json', (req, res) => res.json(publicStatus({ anonymous: true })))
 }
 
 app.get('/assets/hls.min.js', (req, res) => res.set('Cache-Control', 'public, max-age=86400').type('js').sendFile(hlsJs))
@@ -586,7 +589,8 @@ function startupSummary () {
   if (!users.length && !['127.0.0.1', '::1', 'localhost'].includes(config.host)) {
     lines.push(`WARNING: listening on ${config.host} without users: other machines can use this server. Add a user.`)
   }
-  if (config.publicDashboard) lines.push(`Public "Now watching" page (no token needed): ${config.publicUrl}/public`)
+  if (config.publicDashboard === 'named') lines.push(`Public pages (no token needed): who watches what ${config.publicUrl}/public, without names ${config.publicUrl}/public/anonymous`)
+  if (config.publicDashboard === 'anonymous') lines.push(`Public page without names (no token needed): ${config.publicUrl}/public`)
   lines.push(`HTTPS (HTTPS=${config.httpsMode}): ${config.tls ? `on, port ${config.httpsPort}` : 'off'}`)
   if (!config.publicUrl.startsWith('https://')) {
     lines.push('No HTTPS: stremio:// install links fail with a TLS error. Paste the manifest URL into Stremio instead.')
