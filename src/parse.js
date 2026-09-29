@@ -114,6 +114,9 @@ export function episodeMatch (name, season, episode) {
   }
   const x = n.match(/\b(\d{1,2})x(\d{2,3})\b/)
   if (x) return +x[1] === season && +x[2] === episode ? 'episode' : null
+  // Several seasons in one pack: "S01-S05", "S1-3", "Season 1-4", "Seasons 1 to 3".
+  const range = n.match(/\b(?:s|seasons?[ ._-]?)(\d{1,2})[ ._]?(?:-|to|~)[ ._]?(?:s|season[ ._-]?)?(\d{1,2})\b(?![ ._-]?e\d)/)
+  if (range) return season >= +range[1] && season <= +range[2] ? 'pack' : null
   const pack = n.match(/\b(?:s|season[ ._-]?)(\d{1,2})\b(?![ ._-]?e\d)/)
   if (pack) return +pack[1] === season ? 'pack' : null
   if (/complete|all seasons|collection/.test(n)) return 'pack'

@@ -26,9 +26,11 @@ export default {
     const queries = type === 'movie'
       ? [`${title} ${year || ''}`.trim()]
       : [episodeQuery(title, season, episode), seasonQuery(title, season)]
-    const lists = await Promise.all(queries.map(q =>
-      fetchFromMirrors(MIRRORS, `/q.php?q=${encodeURIComponent(q)}&cat=${cat}`).catch(() => [])
-    ))
-    return lists.flatMap(l => toResults(l, imdbId))
+    const settled = await Promise.allSettled(queries.map(q =>
+      fetchFromMirrors(MIRRORS, `/q.php?q=${encodeURIComponent(q)}&cat=${cat}`)))
+    // Every request failed (often a Cloudflare challenge for servers in data centers): report
+    // it, instead of looking like a search without results.
+    if (settled.every(r => r.status === 'rejected')) throw settled[0].reason
+    return settled.flatMap(r => r.status === 'fulfilled' ? toResults(r.value, imdbId) : [])
   }
 }

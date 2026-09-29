@@ -608,7 +608,7 @@ All settings are environment variables. Limits changed in the TUI are saved and 
 | `PUBLIC_URL` | `https://127.0.0.1:$HTTPS_PORT` with a certificate, else `http://127.0.0.1:$PORT` | Base URL for install and stream links. |
 | `STREAM_URL` | `PUBLIC_URL` if set, else `http://127.0.0.1:$PORT` | Base URL for `/play` stream links only. |
 | `STREAM_MODE` | `webtorrent` | `webtorrent`, `native` or `both`. |
-| `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x`), or `all`. |
+| `SCRAPERS` | empty (none) | Indexes to search, comma-separated (`yts,tpb,eztv,nyaa,1337x,torrentscsv`), or `all`. |
 | `ACCESS_TOKENS` | empty | `name:token,name:token`. Empty and no saved users means open access. |
 | `PUBLIC_DASHBOARD` | `off` | `anonymous`: read-only [public page](#public-pages) with what plays, no names. `on`: who watches what at `/public`, plus the anonymous page at `/public/anonymous`. |
 | `ADMIN_USERS` | the first user | Users who may stop anyone's torrents in the web dashboard, comma-separated. |
@@ -764,13 +764,20 @@ Under `/<token>` when users exist.
 | Key | Content | Method |
 |---|---|---|
 | `yts` | Movies | JSON API, by IMDb id |
-| `tpb` | Movies, TV | JSON API |
+| `tpb` | Movies, TV, season packs | JSON API (often blocked by Cloudflare for servers in data centers) |
 | `eztv` | TV | JSON API, by IMDb id |
 | `nyaa` | Anime | RSS feed |
 | `1337x` | Movies, TV | HTML (often blocked by Cloudflare) |
+| `torrentscsv` | Movies, TV, season packs | JSON API of [Torrents-CSV](https://torrents-csv.com), torrents found on the DHT; works from data centers |
 
 None is enabled by default; enable them with `SCRAPERS` or the Configure page. Unknown keys
-are ignored. Each index module in `src/scrapers/` lists mirror domains, which change often. To add an index,
+are ignored.
+
+For series every index is asked for the episode, and TPB and Torrents-CSV also for the whole
+season, so season packs (also packs of several seasons, like "S01-S05") are offered for every
+episode of the season; the server then plays the right file from the pack. A blocked index
+shows up in the log as a warning with the HTTP status, for example
+`[scraper] TPB: HTTP 403 for https://apibay.org/...`; `torrentscsv` still works then. Each index module in `src/scrapers/` lists mirror domains, which change often. To add an index,
 export `{ name, types, search(query) }` from a module and register it in `src/scrapers/index.js`.
 
 ## Legal and safety

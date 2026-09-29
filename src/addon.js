@@ -12,7 +12,7 @@ export const manifest = {
   id: 'community.webtorrent.scraper',
   version: '1.0.0',
   name: 'WebTorrent Scraper',
-  description: 'Scrapes public torrent indexes (YTS, TPB, EZTV, Nyaa, 1337x) and streams them through a WebTorrent server.',
+  description: 'Scrapes public torrent indexes (YTS, TPB, EZTV, Nyaa, 1337x, Torrents-CSV) and streams them through a WebTorrent server.',
   resources: ['stream'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],

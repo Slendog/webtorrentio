@@ -12,7 +12,14 @@ export default {
     const id = imdbId.replace(/^tt/, '')
     const out = []
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const data = await fetchFromMirrors(MIRRORS, `/api/get-torrents?imdb_id=${id}&limit=100&page=${page}`)
+      let data
+      try {
+        data = await fetchFromMirrors(MIRRORS, `/api/get-torrents?imdb_id=${id}&limit=100&page=${page}`)
+      } catch (err) {
+        // A later page failing (rate limit, challenge) must not throw away the pages already read.
+        if (page === 1) throw err
+        break
+      }
       const torrents = data?.torrents || []
       for (const t of torrents) {
         if (+t.season !== season || (+t.episode !== episode && +t.episode !== 0)) continue

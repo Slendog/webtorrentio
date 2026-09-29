@@ -5,8 +5,9 @@ import tpb from './tpb.js'
 import eztv from './eztv.js'
 import nyaa from './nyaa.js'
 import x1337 from './x1337.js'
+import torrentscsv from './torrentscsv.js'
 
-const ALL = { yts, tpb, eztv, nyaa, '1337x': x1337 }
+const ALL = { yts, tpb, eztv, nyaa, '1337x': x1337, torrentscsv }
 
 export const SCRAPER_KEYS = Object.keys(ALL)
 
