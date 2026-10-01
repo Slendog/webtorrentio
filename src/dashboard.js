@@ -134,7 +134,9 @@ export const dashboardHtml = `<!doctype html>
       const ahead = v && v.length ? Math.min(100 - done, v.bufferedAhead / v.length * 100) : 0
       const via = w.via && w.via.startsWith('room ') ? 'Together' : (w.via || 'WebTorrent')
       const behind = t.watchers.list.length > 1 && w.behindSec > 5 ? ', ' + clock(w.behindSec) + ' behind' : ''
-      return '<div class="person"><div class="person-top"><span><span class="who">' + name(w.user) + '</span><span class="via">' + esc(via) + '</span></span>' +
+      // In a season pack people can watch different episodes of the same torrent.
+      const episode = w.title && w.title !== t.title ? ' <span class="muted">' + esc(w.title) + '</span>' : ''
+      return '<div class="person"><div class="person-top"><span><span class="who">' + name(w.user) + '</span><span class="via">' + esc(via) + '</span>' + episode + '</span>' +
         '<span class="muted">' + where + behind + '</span></div>' +
         '<div class="bar" role="img" aria-label="' + Math.round(done) + '% watched"><div class="done" style="width:' + done.toFixed(1) + '%"></div>' +
         '<div class="ahead" style="left:' + done.toFixed(1) + '%;width:' + ahead.toFixed(1) + '%"></div></div>' +

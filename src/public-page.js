@@ -23,7 +23,7 @@ export function publicStatus ({ anonymous = false } = {}) {
       if (w.via?.startsWith('room ')) continue
       watching.push({
         user: clean(w.user),
-        title: title(w.file || t.name),
+        title: w.title || title(w.file || t.name),
         via: w.via?.startsWith('room ') ? 'Together' : w.via || 'WebTorrent',
         percent: Math.round(w.fraction * 100),
         positionSec: w.positionSec,

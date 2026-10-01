@@ -11,7 +11,7 @@ import { oneLine } from './logbuffer.js'
 import { getScraped } from './registry.js'
 import { fatal } from './runtime.js'
 import { isAdmin, onChange } from './settings.js'
-import { prettyTitle } from './names.js'
+import { watchTitle } from './names.js'
 
 const READY_TIMEOUT_MS = 60_000
 
@@ -707,7 +707,7 @@ function watchers (entry) {
   const list = [...best.values()].map(r => {
     const fraction = r.pos / r.file.length
     const via = watches.get(`${r.user}\n${entry.infoHash}\n${r.file.path}`)?.via || null
-    return { user: r.user, file: r.file.name, via, fraction, positionSec: runtimeSec ? Math.round(fraction * runtimeSec) : null }
+    return { user: r.user, file: r.file.name, season: r.season ?? null, episode: r.episode ?? null, title: watchTitle(r.file.name, entry.torrent.name, r), via, fraction, positionSec: runtimeSec ? Math.round(fraction * runtimeSec) : null }
   })
   const lead = Math.max(0, ...list.map(w => w.positionSec ?? 0))
   for (const w of list) w.behindSec = w.positionSec == null ? null : lead - w.positionSec
@@ -720,13 +720,16 @@ function torrentStats (entry, user) {
   const seeders = wires.filter(w => w.isSeeder).length
   const playing = [...files.keys()].map(path => {
     const f = torrent.files?.find(x => x.path === path)
-    return f ? { name: f.name, length: f.length, progress: f.progress } : { name: path }
+    return f ? { name: f.name, path, length: f.length, progress: f.progress } : { name: path, path }
   })
   return {
     infoHash,
     name: torrent.name || getScraped(infoHash)?.name || infoHash,
     // Short title for people: from the file being played, else the torrent name.
-    title: prettyTitle(playing[0]?.name || torrent.name || getScraped(infoHash)?.name || ''),
+    title: (() => {
+      const r = [...entry.readers].find(x => x.file.path === playing[0]?.path) || [...entry.readers][0]
+      return watchTitle(r?.file.name || playing[0]?.name, torrent.name || getScraped(infoHash)?.name || '', r || {})
+    })(),
     ready: Boolean(torrent.ready),
     connections,
     prefetched: entry.prefetch,
